@@ -1,13 +1,34 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
 using AspNet.Security.OAuth.Twitch;
 using backend_dotnet.Data;
+using backend_dotnet.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
+
+var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:3000";
+var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ORIGINS");
+var allowedOrigins = (string.IsNullOrWhiteSpace(corsOriginsRaw)
+        ? new[] { frontendUrl, "http://localhost:3000", "http://localhost:5174", "http://localhost:8080" }
+        : corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("VoxifyFrontend", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 
 builder.Services.AddDbContext<VoxifyDbContext>(options =>
     options.UseNpgsql(
@@ -21,7 +42,34 @@ builder.Services.AddAuthentication(options =>
     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
-.AddCookie()
+.AddCookie(options =>
+{
+    options.Cookie.Name = "Voxify.Auth";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Events.OnRedirectToLogin = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/json";
+            return context.Response.WriteAsync("{\"error\":\"No autenticado. Inicia sesión para acceder a este recurso.\"}");
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            return context.Response.WriteAsync("{\"error\":\"Acceso denegado. No tienes permisos suficientes para este recurso.\"}");
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
+})
 .AddTwitch(options =>
 {
     options.ClientId = Environment.GetEnvironmentVariable("TWITCH_CLIENT_ID") ?? "";
@@ -36,7 +84,18 @@ builder.Services.AddAuthentication(options =>
     options.CallbackPath = "/signin-microsoft";
     options.SaveTokens = true;
 });
-builder.Services.AddAuthorization();
+builder.Services.AddTransient<IClaimsTransformation, VoxifyClaimsTransformation>();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ReporteProduccionAudios", policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireRole(VoxifyClaimsTransformation.RoleAnalistaReportes)
+            .RequireClaim(
+                VoxifyClaimsTransformation.ClaimPermiso,
+                VoxifyClaimsTransformation.PermisoLeerReporteProduccion
+            ));
+});
 
 var app = builder.Build();
 
@@ -45,7 +104,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+if (!string.Equals(Environment.GetEnvironmentVariable("DISABLE_HTTPS_REDIRECTION"), "true", StringComparison.OrdinalIgnoreCase))
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("VoxifyFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
