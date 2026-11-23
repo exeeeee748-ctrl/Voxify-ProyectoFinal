@@ -85,4 +85,21 @@ public class SolicitudesGeneracionController : ControllerBase
 
         return Ok(solicitud);
     }
+
+    // DELETE: api/SolicitudesGeneracion/5
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> EliminarSolicitud(int id)
+    {
+        var solicitud = await _context.SolicitudesGeneracion
+            .FirstOrDefaultAsync(s => s.Id == id && s.Activo);
+
+        if (solicitud == null)
+            return NotFound("Solicitud no encontrada.");
+
+        solicitud.Activo = false;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Solicitud eliminada lógicamente.");
+    }
 }

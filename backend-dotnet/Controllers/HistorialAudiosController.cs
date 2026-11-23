@@ -83,4 +83,21 @@ public class HistorialAudiosController : ControllerBase
 
         return Ok(historial);
     }
+
+    // DELETE: api/HistorialAudios/5
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> EliminarRegistro(int id)
+    {
+        var historial = await _context.HistorialAudios
+            .FirstOrDefaultAsync(h => h.Id == id && h.Visible);
+
+        if (historial == null)
+            return NotFound("Registro del historial no encontrado.");
+
+        historial.Visible = false;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Registro del historial eliminado lógicamente.");
+    }
 }

@@ -85,4 +85,21 @@ public class AudiosController : ControllerBase
 
         return Ok(audio);
     }
+
+    // DELETE: api/Audios/5
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> EliminarAudio(int id)
+    {
+        var audio = await _context.Audios
+            .FirstOrDefaultAsync(a => a.Id == id && a.Activo);
+
+        if (audio == null)
+            return NotFound("Audio no encontrado.");
+
+        audio.Activo = false;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Audio eliminado lógicamente.");
+    }
 }

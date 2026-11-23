@@ -70,4 +70,21 @@ public class IdiomasController : ControllerBase
 
         return Ok(idioma);
     }
+
+    // DELETE: api/Idiomas/5
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> EliminarIdioma(int id)
+    {
+        var idioma = await _context.Idiomas
+            .FirstOrDefaultAsync(i => i.Id == id && i.Activo);
+
+        if (idioma == null)
+            return NotFound("Idioma no encontrado.");
+
+        idioma.Activo = false;
+
+        await _context.SaveChangesAsync();
+
+        return Ok("Idioma eliminado lógicamente.");
+    }
 }
