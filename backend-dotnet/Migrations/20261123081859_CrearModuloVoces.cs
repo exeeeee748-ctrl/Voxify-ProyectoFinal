@@ -1,0 +1,122 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+
+#nullable disable
+
+namespace backend_dotnet.Migrations
+{
+    /// <inheritdoc />
+    public partial class CrearModuloVoces : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "SolicitudesClonacion",
+                columns: table => new
+                {
+                    IdSolicitudClonacion = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UsuarioId = table.Column<int>(type: "integer", nullable: false),
+                    Estado = table.Column<string>(type: "text", nullable: false),
+                    FechaSolicitud = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Activa = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SolicitudesClonacion", x => x.IdSolicitudClonacion);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Voces",
+                columns: table => new
+                {
+                    IdVoz = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Nombre = table.Column<string>(type: "text", nullable: false),
+                    Descripcion = table.Column<string>(type: "text", nullable: true),
+                    Genero = table.Column<string>(type: "text", nullable: true),
+                    Acento = table.Column<string>(type: "text", nullable: true),
+                    Activa = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Voces", x => x.IdVoz);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "MuestrasVoz",
+                columns: table => new
+                {
+                    IdMuestraVoz = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    IdSolicitudClonacion = table.Column<int>(type: "integer", nullable: false),
+                    Archivo = table.Column<string>(type: "text", nullable: false),
+                    DuracionSegundos = table.Column<double>(type: "double precision", nullable: true),
+                    FechaRegistro = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Activa = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MuestrasVoz", x => x.IdMuestraVoz);
+                    table.ForeignKey(
+                        name: "FK_MuestrasVoz_SolicitudesClonacion_IdSolicitudClonacion",
+                        column: x => x.IdSolicitudClonacion,
+                        principalTable: "SolicitudesClonacion",
+                        principalColumn: "IdSolicitudClonacion",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "VocesClonadas",
+                columns: table => new
+                {
+                    IdVozClonada = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UsuarioId = table.Column<int>(type: "integer", nullable: false),
+                    IdVoz = table.Column<int>(type: "integer", nullable: true),
+                    Nombre = table.Column<string>(type: "text", nullable: false),
+                    Archivo = table.Column<string>(type: "text", nullable: true),
+                    FechaCreacion = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Activa = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_VocesClonadas", x => x.IdVozClonada);
+                    table.ForeignKey(
+                        name: "FK_VocesClonadas_Voces_IdVoz",
+                        column: x => x.IdVoz,
+                        principalTable: "Voces",
+                        principalColumn: "IdVoz",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MuestrasVoz_IdSolicitudClonacion",
+                table: "MuestrasVoz",
+                column: "IdSolicitudClonacion");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_VocesClonadas_IdVoz",
+                table: "VocesClonadas",
+                column: "IdVoz");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "MuestrasVoz");
+
+            migrationBuilder.DropTable(
+                name: "VocesClonadas");
+
+            migrationBuilder.DropTable(
+                name: "SolicitudesClonacion");
+
+            migrationBuilder.DropTable(
+                name: "Voces");
+        }
+    }
+}
