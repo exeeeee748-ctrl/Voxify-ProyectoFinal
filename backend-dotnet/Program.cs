@@ -19,6 +19,7 @@ builder.Services.AddDbContext<VoxifyDbContext>(options =>
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
 .AddCookie()
 .AddTwitch(options =>
@@ -26,6 +27,13 @@ builder.Services.AddAuthentication(options =>
     options.ClientId = Environment.GetEnvironmentVariable("TWITCH_CLIENT_ID") ?? "";
     options.ClientSecret = Environment.GetEnvironmentVariable("TWITCH_CLIENT_SECRET") ?? "";
     options.CallbackPath = "/signin-twitch";
+    options.SaveTokens = true;
+})
+.AddMicrosoftAccount(options =>
+{
+    options.ClientId = Environment.GetEnvironmentVariable("MICROSOFT_CLIENT_ID") ?? "";
+    options.ClientSecret = Environment.GetEnvironmentVariable("MICROSOFT_CLIENT_SECRET") ?? "";
+    options.CallbackPath = "/signin-microsoft";
     options.SaveTokens = true;
 });
 builder.Services.AddAuthorization();

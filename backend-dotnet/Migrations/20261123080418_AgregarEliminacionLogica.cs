@@ -15,14 +15,14 @@ namespace backend_dotnet.Migrations
                 table: "SolicitudesGeneracion",
                 type: "boolean",
                 nullable: false,
-                defaultValue: false);
+                defaultValue: true);
 
             migrationBuilder.AddColumn<bool>(
                 name: "Activo",
                 table: "Audios",
                 type: "boolean",
                 nullable: false,
-                defaultValue: false);
+                defaultValue: true);
         }
 
         /// <inheritdoc />
