@@ -21,7 +21,11 @@ const ROUTE_META = {
   },
   '/voces': {
     title: 'Voces y Clonación',
-    subtitle: 'Catálogo de voces predeterminadas, favoritas y clonación zero-shot',
+    subtitle: 'Catálogo de voces predeterminadas, favoritas y vistas internas',
+  },
+  '/voces/clonar': {
+    title: 'Clonación de Voz',
+    subtitle: 'Laboratorio dedicado de clonación zero-shot con Kitten TTS 2',
   },
   '/historial': {
     title: 'Historial de Audios',

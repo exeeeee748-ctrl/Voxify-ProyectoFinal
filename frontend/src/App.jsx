@@ -273,7 +273,7 @@ export default function App() {
             />
 
             <Route
-              path="/voces"
+              path="/voces/*"
               element={wrapProtected(
                 <VoicesCloningTab
                   voices={voices}
