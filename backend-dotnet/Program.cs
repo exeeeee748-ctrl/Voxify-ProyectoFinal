@@ -27,15 +27,7 @@ builder.Services.AddAuthentication(options =>
     options.ClientSecret = Environment.GetEnvironmentVariable("TWITCH_CLIENT_SECRET") ?? "";
     options.CallbackPath = "/signin-twitch";
     options.SaveTokens = true;
-})
-.AddMicrosoftAccount(options =>
-{
-    options.ClientId = Environment.GetEnvironmentVariable("MICROSOFT_CLIENT_ID") ?? "";
-    options.ClientSecret = Environment.GetEnvironmentVariable("MICROSOFT_CLIENT_SECRET") ?? "";
-    options.CallbackPath = "/signin-microsoft";
-    options.SaveTokens = true;
 });
-
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
