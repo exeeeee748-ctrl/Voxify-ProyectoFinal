@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
+  ArrowRight,
   AudioLines,
   Download,
   FileText,
@@ -13,7 +15,6 @@ import {
   Upload,
   Volume2,
 } from 'lucide-react';
-import { KITTEN_VOICES } from '../config/voxifyConfig';
 import { apiRequest } from '../services/apiClient';
 import VoiceWaveformCanvas from './VoiceWaveformCanvas';
 
@@ -57,6 +58,11 @@ export default function VoiceStudioTab({
   demoMode,
   apiBaseUrl,
   idiomas,
+  voices,
+  selectedVoiceId,
+  favoriteVoices,
+  onSelectVoice,
+  onToggleFavoriteVoice,
   onReloadIdiomas,
   onAudioGenerated,
   showToast,
@@ -65,16 +71,6 @@ export default function VoiceStudioTab({
     'Bienvenido a Voxify. Esta plataforma convierte tu texto en voz natural utilizando el motor Kitten TTS 2.'
   );
   const [selectedLangId, setSelectedLangId] = useState(() => idiomas[0]?.id || 1);
-  const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
-    return window.localStorage.getItem('voxify_last_voice') || KITTEN_VOICES[0].id;
-  });
-  const [favoriteVoices, setFavoriteVoices] = useState(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem('voxify_fav_voices') || '["kitten-aura-es"]');
-    } catch {
-      return ['kitten-aura-es'];
-    }
-  });
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -94,14 +90,6 @@ export default function VoiceStudioTab({
   }, [idiomas, selectedLangId]);
 
   useEffect(() => {
-    window.localStorage.setItem('voxify_last_voice', selectedVoiceId);
-  }, [selectedVoiceId]);
-
-  useEffect(() => {
-    window.localStorage.setItem('voxify_fav_voices', JSON.stringify(favoriteVoices));
-  }, [favoriteVoices]);
-
-  useEffect(() => {
     return () => {
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
       if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -110,7 +98,7 @@ export default function VoiceStudioTab({
     };
   }, []);
 
-  const selectedVoice = KITTEN_VOICES.find((v) => v.id === selectedVoiceId) || KITTEN_VOICES[0];
+  const selectedVoice = voices.find((v) => v.id === selectedVoiceId) || voices[0];
   const selectedLang = idiomas.find((l) => String(l.id) === String(selectedLangId)) || idiomas[0];
   const charCount = text.length;
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
@@ -118,7 +106,7 @@ export default function VoiceStudioTab({
 
   const toggleFavoriteVoice = (id, e) => {
     e.stopPropagation();
-    setFavoriteVoices((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    onToggleFavoriteVoice(id);
   };
 
   const handleTxtUpload = (e) => {
@@ -312,8 +300,8 @@ export default function VoiceStudioTab({
   };
 
   const visibleVoices = onlyFavorites
-    ? KITTEN_VOICES.filter((v) => favoriteVoices.includes(v.id))
-    : KITTEN_VOICES;
+    ? voices.filter((v) => favoriteVoices.includes(v.id))
+    : voices;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -568,9 +556,9 @@ export default function VoiceStudioTab({
                     role="button"
                     tabIndex={0}
                     className={`voice-card ${isSelected ? 'selected' : ''}`}
-                    onClick={() => setSelectedVoiceId(voice.id)}
+                    onClick={() => onSelectVoice(voice.id)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') setSelectedVoiceId(voice.id);
+                      if (e.key === 'Enter' || e.key === ' ') onSelectVoice(voice.id);
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -619,6 +607,15 @@ export default function VoiceStudioTab({
                 );
               })}
             </div>
+
+            <Link
+              to="/voces"
+              className="btn btn-ghost btn-sm"
+              style={{ width: '100%', marginTop: 12, textDecoration: 'none' }}
+            >
+              Ver catálogo y clonar voz
+              <ArrowRight size={14} />
+            </Link>
           </div>
         </div>
       </div>

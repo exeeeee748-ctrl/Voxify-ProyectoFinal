@@ -1,35 +1,43 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  AudioLines,
-  BarChart3,
-  Clock,
-  LogOut,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Sparkles } from 'lucide-react';
 import {
   DEMO_HISTORIAL,
   DEMO_IDIOMAS,
   DEMO_USER,
+  KITTEN_VOICES,
   getApiBaseUrl,
   setApiBaseUrl,
 } from './config/voxifyConfig';
 import { apiRequest, normalizeUser } from './services/apiClient';
-import { BrandMark, ProviderIcon } from './components/BrandMark';
+import { BrandMark } from './components/BrandMark';
+import AppLayout from './components/AppLayout';
 import LoginView from './components/LoginView';
 import VoiceStudioTab from './components/VoiceStudioTab';
+import VoicesCloningTab from './components/VoicesCloningTab';
 import HistoryTab from './components/HistoryTab';
 import ReportsTab from './components/ReportsTab';
 import SecurityTab from './components/SecurityTab';
 
 export default function App() {
+  const navigate = useNavigate();
   const [apiBaseUrl, setApiBaseUrlState] = useState(() => getApiBaseUrl());
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
-  const [activeTab, setActiveTab] = useState('studio');
   const [idiomas, setIdiomas] = useState([]);
   const [historial, setHistorial] = useState([]);
+  const [voices, setVoices] = useState(() => KITTEN_VOICES);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
+    return window.localStorage.getItem('voxify_last_voice') || KITTEN_VOICES[0].id;
+  });
+  const [favoriteVoices, setFavoriteVoices] = useState(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem('voxify_fav_voices') || '["kitten-aura-es"]');
+    } catch {
+      return ['kitten-aura-es'];
+    }
+  });
   const [logoutNotice, setLogoutNotice] = useState('');
   const [lastLogoutProbe, setLastLogoutProbe] = useState(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -45,10 +53,27 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    window.localStorage.setItem('voxify_last_voice', selectedVoiceId);
+  }, [selectedVoiceId]);
+
+  useEffect(() => {
+    window.localStorage.setItem('voxify_fav_voices', JSON.stringify(favoriteVoices));
+  }, [favoriteVoices]);
+
   const handleApiBaseUrlChange = (nextUrl) => {
     const clean = (nextUrl || 'http://localhost:5173').trim().replace(/\/$/, '');
     setApiBaseUrl(clean);
     setApiBaseUrlState(clean);
+  };
+
+  const handleToggleFavoriteVoice = (id) => {
+    setFavoriteVoices((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleAddClonedVoice = (newVoice) => {
+    setVoices((prev) => [newVoice, ...prev]);
+    setSelectedVoiceId(newVoice.id);
   };
 
   const loadProtectedData = useCallback(
@@ -98,8 +123,8 @@ export default function App() {
     setIdiomas(DEMO_IDIOMAS);
     setHistorial(DEMO_HISTORIAL);
     setLogoutNotice('');
-    setActiveTab('studio');
-    showToast('Vista previa activada. Puedes cambiar a conexión real en cualquier momento.');
+    navigate('/estudio', { replace: true });
+    showToast('Vista previa activada. Explora todas las vistas desde la barra lateral.');
   };
 
   const handleLogout = async () => {
@@ -108,9 +133,12 @@ export default function App() {
     if (demoMode) {
       setDemoMode(false);
       setUser(null);
-      setLogoutNotice('Saliste de la vista previa. Inicia sesión con Twitch o Microsoft para usar el backend real.');
+      setLogoutNotice(
+        'Saliste de la vista previa. Inicia sesión con Twitch o Microsoft para usar el backend real.'
+      );
       setLastLogoutProbe(null);
       setLoggingOut(false);
+      navigate('/login', { replace: true });
       return;
     }
 
@@ -119,7 +147,6 @@ export default function App() {
       baseUrl: apiBaseUrl,
     });
 
-    // Immediately verify protected resource rejection after logout (Punto 1)
     const verifyAfterLogout = await apiRequest('/api/auth/me', {
       method: 'GET',
       baseUrl: apiBaseUrl,
@@ -135,6 +162,7 @@ export default function App() {
         : 'Sesión local cerrada. Verifica el estado del backend.'
     );
     setLoggingOut(false);
+    navigate('/login', { replace: true });
   };
 
   const handleAudioGenerated = (item) => {
@@ -166,12 +194,22 @@ export default function App() {
     setHistorial((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const initials = (user?.nombre || 'VX')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join('');
+  const wrapProtected = (element) => {
+    if (!user) return <Navigate to="/login" replace />;
+    return (
+      <AppLayout
+        user={user}
+        demoMode={demoMode}
+        apiBaseUrl={apiBaseUrl}
+        historialCount={historial.length}
+        voicesCount={voices.length}
+        loggingOut={loggingOut}
+        onLogout={handleLogout}
+      >
+        {element}
+      </AppLayout>
+    );
+  };
 
   return (
     <>
@@ -196,131 +234,62 @@ export default function App() {
               Verificando sesión con <span className="mono">{apiBaseUrl}/api/auth/me</span>...
             </span>
           </div>
-        ) : !user ? (
-          <LoginView
-            apiBaseUrl={apiBaseUrl}
-            onApiBaseUrlChange={handleApiBaseUrlChange}
-            logoutNotice={logoutNotice}
-            lastLogoutProbe={lastLogoutProbe}
-            onEnterDemoMode={handleEnterDemoMode}
-          />
         ) : (
-          <>
-            <header className="topbar">
-              <div className="topbar-inner">
-                <BrandMark playing compact />
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                user ? (
+                  <Navigate to="/estudio" replace />
+                ) : (
+                  <LoginView
+                    apiBaseUrl={apiBaseUrl}
+                    onApiBaseUrlChange={handleApiBaseUrlChange}
+                    logoutNotice={logoutNotice}
+                    lastLogoutProbe={lastLogoutProbe}
+                    onEnterDemoMode={handleEnterDemoMode}
+                  />
+                )
+              }
+            />
 
-                <nav className="nav-tabs" aria-label="Navegación principal">
-                  <button
-                    type="button"
-                    className={`nav-tab ${activeTab === 'studio' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('studio')}
-                  >
-                    <AudioLines size={15} />
-                    Estudio de Voz
-                  </button>
-                  <button
-                    type="button"
-                    className={`nav-tab ${activeTab === 'history' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('history')}
-                  >
-                    <Clock size={15} />
-                    Historial ({historial.length})
-                  </button>
-                  <button
-                    type="button"
-                    className={`nav-tab ${activeTab === 'reports' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('reports')}
-                  >
-                    <BarChart3 size={15} />
-                    Reportes
-                  </button>
-                  <button
-                    type="button"
-                    className={`nav-tab ${activeTab === 'security' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('security')}
-                  >
-                    <ShieldCheck size={15} />
-                    Sesión & API
-                  </button>
-                </nav>
-
-                <div className="user-chip">
-                  <div className="user-avatar">{initials}</div>
-                  <div className="user-meta">
-                    <span className="user-name">{user.nombre}</span>
-                    <span className="user-sub">
-                      <ProviderIcon providerId={user.proveedor} size={13} />
-                      <span>{user.proveedor}</span>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={handleLogout}
-                    disabled={loggingOut}
-                    title="Cerrar sesión"
-                  >
-                    <LogOut size={14} />
-                    {loggingOut ? 'Saliendo...' : 'Salir'}
-                  </button>
-                </div>
-              </div>
-            </header>
-
-            <main className="workspace">
-              {demoMode && (
-                <div className="demo-banner">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Sparkles size={16} color="#fbbf24" />
-                    <span>
-                      <strong>Modo Vista Previa activo</strong> — Estás explorando la interfaz sin
-                      sesión real. Para probar OAuth real con Twitch/Microsoft, cierra esta vista y
-                      conéctate a <span className="mono">{apiBaseUrl}</span>.
-                    </span>
-                  </div>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={handleLogout}>
-                    Volver al Login Real
-                  </button>
-                </div>
-              )}
-
-              {/* Quick summary stats */}
-              <section className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-label">Estado de Sesión</div>
-                  <div className="stat-value" style={{ fontSize: '1.15rem', color: 'var(--emerald)' }}>
-                    Autenticado · {user.proveedor}
-                  </div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-label">Idiomas Activos</div>
-                  <div className="stat-value mono">{idiomas.length}</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-label">Audios en Historial</div>
-                  <div className="stat-value mono">{historial.length}</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-label">Backend Conectado</div>
-                  <div className="stat-value mono" style={{ fontSize: '0.95rem', color: 'var(--cyan)' }}>
-                    {apiBaseUrl.replace(/^https?:\/\//, '')}
-                  </div>
-                </div>
-              </section>
-
-              {activeTab === 'studio' && (
+            <Route
+              path="/estudio"
+              element={wrapProtected(
                 <VoiceStudioTab
                   demoMode={demoMode}
                   apiBaseUrl={apiBaseUrl}
                   idiomas={idiomas}
+                  voices={voices}
+                  selectedVoiceId={selectedVoiceId}
+                  favoriteVoices={favoriteVoices}
+                  onSelectVoice={setSelectedVoiceId}
+                  onToggleFavoriteVoice={handleToggleFavoriteVoice}
                   onReloadIdiomas={() => loadProtectedData(apiBaseUrl)}
                   onAudioGenerated={handleAudioGenerated}
                   showToast={showToast}
                 />
               )}
+            />
 
-              {activeTab === 'history' && (
+            <Route
+              path="/voces"
+              element={wrapProtected(
+                <VoicesCloningTab
+                  voices={voices}
+                  selectedVoiceId={selectedVoiceId}
+                  favoriteVoices={favoriteVoices}
+                  onSelectVoice={setSelectedVoiceId}
+                  onToggleFavoriteVoice={handleToggleFavoriteVoice}
+                  onAddClonedVoice={handleAddClonedVoice}
+                  showToast={showToast}
+                />
+              )}
+            />
+
+            <Route
+              path="/historial"
+              element={wrapProtected(
                 <HistoryTab
                   demoMode={demoMode}
                   apiBaseUrl={apiBaseUrl}
@@ -330,12 +299,23 @@ export default function App() {
                   showToast={showToast}
                 />
               )}
+            />
 
-              {activeTab === 'reports' && (
-                <ReportsTab user={user} demoMode={demoMode} apiBaseUrl={apiBaseUrl} showToast={showToast} />
+            <Route
+              path="/reportes"
+              element={wrapProtected(
+                <ReportsTab
+                  user={user}
+                  demoMode={demoMode}
+                  apiBaseUrl={apiBaseUrl}
+                  showToast={showToast}
+                />
               )}
+            />
 
-              {activeTab === 'security' && (
+            <Route
+              path="/sesion"
+              element={wrapProtected(
                 <SecurityTab
                   user={user}
                   demoMode={demoMode}
@@ -344,8 +324,10 @@ export default function App() {
                   showToast={showToast}
                 />
               )}
-            </main>
-          </>
+            />
+
+            <Route path="*" element={<Navigate to={user ? '/estudio' : '/login'} replace />} />
+          </Routes>
         )}
       </div>
 
