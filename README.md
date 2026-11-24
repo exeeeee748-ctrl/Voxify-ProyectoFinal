@@ -213,3 +213,38 @@ docker compose -f docker-compose.dev.yml up --build -d
 1. Abrir `http://localhost:3000` (redirige a `/login` mostrando los proveedores OAuth configurados: TikTok, Microsoft y Twitch).
 2. Probar acceso sin sesión → el backend rechaza con `401 Unauthorized`.
 3. Iniciar sesión con un proveedor real, verificar la identidad autenticada, consultar `/reportes` (`200 OK` autorizado / `403` sin permisos) y cerrar sesión comprobando el bloqueo posterior.
+
+
+## Imagen publicada en Docker Hub (Punto 6)
+
+- **Repositorio en Docker Hub:** `https://hub.docker.com/r/12882321docker/voxify-backend/tags`
+- **Referencia completa:** `12882321docker/voxify-backend:1.0.0`
+- **Dockerfile oficial utilizado:** `backend-dotnet/Dockerfile.EzequielGallardo`
+
+```bash
+# Comprobar descarga directa desde Docker Hub
+docker pull 12882321docker/voxify-backend:1.0.0
+```
+
+## Entorno de release con cuatro instancias (Punto 7)
+
+El archivo `docker-compose.release.yml` descarga directamente la imagen publicada (`12882321docker/voxify-backend:1.0.0`) **sin compilar código fuente**, levanta PostgreSQL 16 con persistencia (`voxify_release_pgdata`) y **cuatro instancias del backend** en los puertos `5001`, `5002`, `5003` y `5004` (mapeados al puerto interno `8080`).
+
+### Sesiones compatibles entre las 4 instancias
+Las 4 instancias comparten el volumen `voxify_release_dpkeys:/app/Storage/keys`, donde ASP.NET Core Data Protection guarda el anillo de claves (`SetApplicationName("Voxify")`). Así, una cookie `Voxify.Auth` emitida en `http://localhost:5001` es reconocida automáticamente en `5002`, `5003` y `5004`.
+
+### Levantar y verificar el release
+
+```bash
+cp -n .env.example .env
+docker compose -f docker-compose.release.yml pull
+docker compose -f docker-compose.release.yml up -d
+docker compose -f docker-compose.release.yml ps
+
+# Verificar /health y rechazo 401 en los 4 puertos
+for port in 5001 5002 5003 5004; do
+  echo "=== Puerto $port ==="
+  curl -s http://localhost:$port/health; echo ""
+  curl -s -o /dev/null -w "Reporte sin sesion: HTTP %{http_code}\n" http://localhost:$port/api/Reportes/produccion-audios
+done
+```

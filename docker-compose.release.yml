@@ -1,0 +1,108 @@
+name: voxify-release
+
+x-backend-common: &backend-common
+  image: ${BACKEND_RELEASE_IMAGE:-12882321docker/voxify-backend:1.0.0}
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+  environment: &backend-env
+    ASPNETCORE_ENVIRONMENT: Production
+    ASPNETCORE_URLS: http://+:8080
+    DISABLE_HTTPS_REDIRECTION: "true"
+    AUTO_MIGRATE: "false"
+    ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-voxify};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-voxify_dev_pass}
+    APP_SECRET_KEY: ${APP_SECRET_KEY:-voxify_release_secret_key_cambiar_en_produccion}
+    FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5174,http://localhost:8080}
+    COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
+    COOKIE_SECURE: ${COOKIE_SECURE:-SameAsRequest}
+    ALLOW_DEV_USER: ${ALLOW_DEV_USER:-false}
+    TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
+    TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+    TIKTOK_REDIRECT_URI: ${TIKTOK_REDIRECT_URI:-http://localhost:5001/auth/tiktok/callback}
+    TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+    TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+    TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-http://localhost:5001/auth/twitch/callback}
+    MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+    MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+    MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+    MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-http://localhost:5001/auth/microsoft/callback}
+    REPORT_ALLOWED_PROVIDERS: ${REPORT_ALLOWED_PROVIDERS:-Twitch}
+    REPORT_ALLOWED_USERS: ${REPORT_ALLOWED_USERS:-}
+  volumes:
+    - voxify_release_dpkeys:/app/Storage/keys
+    - voxify_release_audios:/app/Storage/audios
+  networks:
+    - voxify_release_net
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: voxify-db-release
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-voxify}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voxify_dev_pass}
+    ports:
+      - "${RELEASE_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - voxify_release_pgdata:/var/lib/postgresql/data
+    networks:
+      - voxify_release_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-voxify}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend-1:
+    <<: *backend-common
+    container_name: voxify-backend-1
+    environment:
+      <<: *backend-env
+      AUTO_MIGRATE: "true"
+      BACKEND_URL: http://localhost:5001
+    ports:
+      - "5001:8080"
+
+  backend-2:
+    <<: *backend-common
+    container_name: voxify-backend-2
+    environment:
+      <<: *backend-env
+      BACKEND_URL: http://localhost:5002
+    ports:
+      - "5002:8080"
+
+  backend-3:
+    <<: *backend-common
+    container_name: voxify-backend-3
+    environment:
+      <<: *backend-env
+      BACKEND_URL: http://localhost:5003
+    ports:
+      - "5003:8080"
+
+  backend-4:
+    <<: *backend-common
+    container_name: voxify-backend-4
+    environment:
+      <<: *backend-env
+      BACKEND_URL: http://localhost:5004
+    ports:
+      - "5004:8080"
+
+volumes:
+  voxify_release_pgdata:
+    name: voxify_release_pgdata
+  voxify_release_dpkeys:
+    name: voxify_release_dpkeys
+  voxify_release_audios:
+    name: voxify_release_audios
+
+networks:
+  voxify_release_net:
+    name: voxify_release_net
+    driver: bridge
