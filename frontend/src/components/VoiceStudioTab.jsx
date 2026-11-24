@@ -9,108 +9,120 @@ import {
   Mic,
   Pause,
   Play,
-  Plus,
+  RefreshCw,
   Sparkles,
   Star,
   Upload,
   Volume2,
 } from 'lucide-react';
-import { apiRequest } from '../services/apiClient';
+import {
+  apiRequest,
+  extractErrorMessage,
+  getAudioUrl,
+  normalizeAudio,
+} from '../services/apiClient';
+import { formatDuration } from '../utils/format';
 import VoiceWaveformCanvas from './VoiceWaveformCanvas';
 
 const MAX_CHARS = 1500;
 
-function createSampleWavBlob(durationSec = 1.6, freq = 260) {
-  const sampleRate = 22050;
-  const numSamples = Math.floor(sampleRate * durationSec);
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-
-  const writeStr = (offset, str) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  };
-
-  writeStr(0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const env = Math.sin((i / numSamples) * Math.PI);
-    const val = (Math.sin(2 * Math.PI * freq * t) * 0.35 + Math.sin(2 * Math.PI * freq * 1.5 * t) * 0.2) * env;
-    view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, val)) * 32767, true);
-  }
-
-  return new Blob([buffer], { type: 'audio/wav' });
-}
-
 export default function VoiceStudioTab({
-  demoMode,
   apiBaseUrl,
   idiomas,
   voices,
   selectedVoiceId,
+  selectedLangId,
   favoriteVoices,
   onSelectVoice,
+  onSelectLang,
   onToggleFavoriteVoice,
-  onReloadIdiomas,
+  onReloadCatalog,
   onAudioGenerated,
   showToast,
 }) {
   const [text, setText] = useState(
     'Bienvenido a Voxify. Esta plataforma convierte tu texto en voz natural utilizando el motor Kitten TTS 2.'
   );
-  const [selectedLangId, setSelectedLangId] = useState(() => idiomas[0]?.id || 1);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [playProgress, setPlayProgress] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [synthesisSpeed, setSynthesisSpeed] = useState(1.0);
+  const [audioFormat, setAudioFormat] = useState('wav');
   const [generatedItem, setGeneratedItem] = useState(null);
-  const [showAddLang, setShowAddLang] = useState(false);
-  const [newLangName, setNewLangName] = useState('');
-  const [newLangCode, setNewLangCode] = useState('');
+  const [reloading, setReloading] = useState(false);
   const fileInputRef = useRef(null);
-  const progressTimerRef = useRef(null);
+  const audioRef = useRef(null);
 
-  useEffect(() => {
-    if (idiomas.length > 0 && !idiomas.some((l) => String(l.id) === String(selectedLangId))) {
-      setSelectedLangId(idiomas[0].id);
-    }
-  }, [idiomas, selectedLangId]);
+  const selectedVoice =
+    voices.find((voice) => String(voice.id) === String(selectedVoiceId)) || voices[0] || null;
+  const selectedLang =
+    idiomas.find((idioma) => String(idioma.id) === String(selectedLangId)) || idiomas[0] || null;
 
-  useEffect(() => {
-    return () => {
-      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
-  const selectedVoice = voices.find((v) => v.id === selectedVoiceId) || voices[0];
-  const selectedLang = idiomas.find((l) => String(l.id) === String(selectedLangId)) || idiomas[0];
   const charCount = text.length;
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
   const overLimit = charCount > MAX_CHARS;
 
-  const toggleFavoriteVoice = (id, e) => {
-    e.stopPropagation();
-    onToggleFavoriteVoice(id);
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const stopPlayback = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    setIsSpeaking(false);
   };
 
-  const handleTxtUpload = (e) => {
-    const file = e.target.files?.[0];
+  const startPlayback = (item, rate = playbackRate) => {
+    if (!item?.audioId) return;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    const audio = new Audio(getAudioUrl(item.audioId, 'reproducir', apiBaseUrl));
+    audio.playbackRate = rate;
+    audio.preload = 'auto';
+
+    audio.ontimeupdate = () => {
+      if (audio.duration && Number.isFinite(audio.duration)) {
+        setPlayProgress(Math.min(100, Math.round((audio.currentTime / audio.duration) * 100)));
+      }
+    };
+    audio.onended = () => {
+      setPlayProgress(100);
+      setIsSpeaking(false);
+    };
+    audio.onpause = () => setIsSpeaking(false);
+    audio.onplay = () => setIsSpeaking(true);
+    audio.onerror = () => {
+      setIsSpeaking(false);
+      showToast('No se pudo reproducir el audio desde el backend.', 'error');
+    };
+
+    audioRef.current = audio;
+    audio.play().catch(() => {
+      setIsSpeaking(false);
+      showToast('El navegador bloqueó la reproducción automática. Pulsa reproducir.', 'error');
+    });
+  };
+
+  const handlePlaybackRateChange = (event) => {
+    const rate = Number(event.target.value);
+    setPlaybackRate(rate);
+    if (audioRef.current) audioRef.current.playbackRate = rate;
+  };
+
+  const handleTxtUpload = (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.txt')) {
       showToast('Solo se admiten archivos de texto (.txt).', 'error');
@@ -124,51 +136,7 @@ export default function VoiceStudioTab({
     };
     reader.onerror = () => showToast('No se pudo leer el archivo TXT.', 'error');
     reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const stopPlayback = () => {
-    if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-  };
-
-  const startPreviewSpeech = (spokenText, langCode, voiceCfg, rateOverride = playbackRate) => {
-    stopPlayback();
-    setIsSpeaking(true);
-    setPlayProgress(4);
-
-    const estimatedMs = Math.max(2200, Math.min(18000, spokenText.length * 68 / rateOverride));
-    const started = Date.now();
-    progressTimerRef.current = setInterval(() => {
-      const pct = Math.min(99, Math.round(((Date.now() - started) / estimatedMs) * 100));
-      setPlayProgress(pct);
-    }, 120);
-
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const utter = new SpeechSynthesisUtterance(spokenText);
-      utter.lang = langCode || 'es-ES';
-      utter.pitch = voiceCfg.pitch || 1;
-      utter.rate = (voiceCfg.rate || 1) * rateOverride;
-      utter.onend = () => {
-        if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-        setPlayProgress(100);
-        setIsSpeaking(false);
-      };
-      utter.onerror = () => {
-        if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-        setIsSpeaking(false);
-      };
-      window.speechSynthesis.speak(utter);
-    } else {
-      setTimeout(() => {
-        if (progressTimerRef.current) clearInterval(progressTimerRef.current);
-        setPlayProgress(100);
-        setIsSpeaking(false);
-      }, estimatedMs);
-    }
+    event.target.value = '';
   };
 
   const handleGenerate = async () => {
@@ -180,127 +148,104 @@ export default function VoiceStudioTab({
       showToast(`El texto supera el límite de ${MAX_CHARS} caracteres.`, 'error');
       return;
     }
-
-    setGenerating(true);
-
-    const fileName = `voxify_${selectedVoice.name.toLowerCase().replace(/\s+/g, '_')}_${Date.now()
-      .toString()
-      .slice(-4)}.wav`;
-
-    if (!demoMode) {
-      const res = await apiRequest('/api/SolicitudesGeneracion', {
-        method: 'POST',
-        baseUrl: apiBaseUrl,
-        body: {
-          texto: text.trim(),
-          estado: 'Completado',
-          idiomaId: Number(selectedLangId),
-          activo: true,
-        },
-      });
-
-      if (!res.ok) {
-        setGenerating(false);
-        showToast(
-          res.status === 401
-            ? 'Tu sesión expiró (401). Vuelve a iniciar sesión.'
-            : `Error al registrar solicitud (HTTP ${res.status}).`,
-          'error'
-        );
-        return;
-      }
-
-      const solicitudId = res.data?.id;
-      if (solicitudId) {
-        const audioRes = await apiRequest('/api/Audios', {
-          method: 'POST',
-          baseUrl: apiBaseUrl,
-          body: {
-            nombreArchivo: fileName,
-            rutaArchivo: `/audios/${fileName}`,
-            solicitudGeneracionId: solicitudId,
-            activo: true,
-          },
-        });
-        const audioId = audioRes.data?.id;
-        if (audioId) {
-          await apiRequest('/api/HistorialAudios', {
-            method: 'POST',
-            baseUrl: apiBaseUrl,
-            body: {
-              audioId,
-              visible: true,
-            },
-          });
-        }
-      }
+    if (!selectedVoice) {
+      showToast('No hay voces cargadas en el backend. Revisa el catálogo.', 'error');
+      return;
     }
-
-    const durationSeconds = Math.max(3, Math.round(wordCount / 2.4));
-    const item = {
-      id: Date.now(),
-      nombreArchivo: fileName,
-      texto: text.trim(),
-      voiceName: selectedVoice.name,
-      voiceType: selectedVoice.type,
-      languageName: selectedLang?.nombre || 'Español',
-      languageCode: selectedLang?.codigo || 'es-ES',
-      duration: `0:${String(durationSeconds).padStart(2, '0')}`,
-      fechaCreacion: new Date().toISOString(),
-    };
-
-    setGeneratedItem(item);
-    onAudioGenerated(item);
-    setGenerating(false);
-    showToast(
-      demoMode
-        ? 'Audio sintetizado en vista previa. Reproduciendo voz...'
-        : 'Solicitud, Audio e Historial guardados en el backend .NET.'
-    );
-    startPreviewSpeech(item.texto, item.languageCode, selectedVoice);
-  };
-
-  const handleDownloadAudio = () => {
-    if (!generatedItem) return;
-    const blob = createSampleWavBlob(2.2, selectedVoice.pitch * 240);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = generatedItem.nombreArchivo;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast(`Descargando ${generatedItem.nombreArchivo}...`);
-  };
-
-  const handleAddLanguage = async (e) => {
-    e.preventDefault();
-    if (!newLangName.trim() || !newLangCode.trim()) return;
-
-    if (demoMode) {
-      showToast(`Idioma "${newLangName}" disponible en modo real con PostgreSQL.`);
-      setShowAddLang(false);
+    if (!selectedLang) {
+      showToast('No hay idiomas cargados en el backend. Revisa el catálogo.', 'error');
       return;
     }
 
-    const res = await apiRequest('/api/Idiomas', {
+    setGenerating(true);
+    stopPlayback();
+    setPlayProgress(0);
+
+    const creacion = await apiRequest('/api/generaciones', {
       method: 'POST',
       baseUrl: apiBaseUrl,
-      body: { nombre: newLangName.trim(), codigo: newLangCode.trim(), activo: true },
+      body: {
+        texto: text.trim(),
+        idVoz: Number(selectedVoice.id),
+        idIdioma: Number(selectedLang.id),
+      },
     });
 
-    if (res.ok) {
-      setNewLangName('');
-      setNewLangCode('');
-      setShowAddLang(false);
-      await onReloadIdiomas();
-      showToast('Idioma agregado al catálogo de PostgreSQL.');
-    } else {
-      showToast(`No se pudo crear el idioma (HTTP ${res.status}).`, 'error');
+    if (!creacion.ok) {
+      setGenerating(false);
+      showToast(extractErrorMessage(creacion, 'No se pudo registrar la solicitud de generación.'), 'error');
+      return;
     }
+
+    const solicitud = creacion.data;
+    const idSolicitud = solicitud?.idSolicitudGeneracion ?? solicitud?.IdSolicitudGeneracion;
+
+    const sintesis = await apiRequest(`/api/generaciones/${idSolicitud}/sintetizar`, {
+      method: 'POST',
+      baseUrl: apiBaseUrl,
+      body: {
+        formato: audioFormat,
+        velocidad: Number(synthesisSpeed),
+      },
+    });
+
+    setGenerating(false);
+
+    if (!sintesis.ok) {
+      showToast(extractErrorMessage(sintesis, 'El microservicio TTS no pudo generar el audio.'), 'error');
+      onAudioGenerated?.();
+      return;
+    }
+
+    const audio = normalizeAudio(sintesis.data);
+    if (!audio) {
+      showToast('El backend devolvió un audio inválido.', 'error');
+      return;
+    }
+
+    const item = {
+      id: audio.id,
+      audioId: audio.id,
+      nombreArchivo: audio.nombreArchivo,
+      texto: text.trim(),
+      voiceName: selectedVoice.name,
+      voiceType: selectedVoice.type,
+      languageName: selectedLang.nombre,
+      languageCode: selectedLang.codigo,
+      durationSeconds: audio.duracionSegundos,
+      duration: formatDuration(audio.duracionSegundos),
+      fechaCreacion: audio.fechaCreacion,
+    };
+
+    setGeneratedItem(item);
+    setPlayProgress(0);
+    onAudioGenerated?.(item);
+    showToast('Audio generado y registrado en el backend .NET.');
+    startPlayback(item);
   };
 
+  const handleDownloadAudio = () => {
+    if (!generatedItem?.audioId) return;
+    const url = getAudioUrl(generatedItem.audioId, 'descargar', apiBaseUrl);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.rel = 'noopener';
+    anchor.click();
+    showToast(`Descargando ${generatedItem.nombreArchivo || 'audio generado'}...`);
+  };
+
+  const handleRefreshCatalog = async () => {
+    setReloading(true);
+    await onReloadCatalog();
+    setReloading(false);
+    showToast('Catálogo de idiomas y voces actualizado desde el backend.');
+  };
+
+  const isFavorite = (voiceId) =>
+    favoriteVoices.some((favorito) => String(favorito) === String(voiceId));
+
   const visibleVoices = onlyFavorites
-    ? voices.filter((v) => favoriteVoices.includes(v.id))
+    ? voices.filter((voice) => isFavorite(voice.id))
     : voices;
 
   return (
@@ -313,25 +258,25 @@ export default function VoiceStudioTab({
             de Kitten TTS 2 y registra la generación en tu backend.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="badge badge-cyan">
             <AudioLines size={13} />
-            Voz activa: {selectedVoice.name}
+            Voz activa: {selectedVoice?.name || 'Sin voz'}
           </span>
-          <span className="badge badge-violet">{selectedVoice.sampleLabel}</span>
+          <span className="badge badge-violet">{selectedVoice?.sampleLabel || 'Kitten TTS 2'}</span>
         </div>
       </div>
 
       {/* Live Acoustic Stage */}
       <div className="wave-showcase">
         <div className="wave-showcase-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className={`badge ${isSpeaking || generating ? 'badge-emerald' : 'badge-cyan'}`}>
               <Volume2 size={13} />
               {generating
                 ? 'Sintetizando con Kitten TTS 2...'
                 : isSpeaking
-                  ? `Reproduciendo · ${selectedVoice.name}`
+                  ? `Reproduciendo · ${selectedVoice?.name || 'voz activa'}`
                   : 'Estudio en espera'}
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
@@ -339,13 +284,13 @@ export default function VoiceStudioTab({
             </span>
           </div>
           <span className="mono" style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-            POST /api/SolicitudesGeneracion
+            POST /api/generaciones
           </span>
         </div>
         <VoiceWaveformCanvas
           active={isSpeaking || generating}
           height={96}
-          accentColor={selectedVoice.accent}
+          accentColor={selectedVoice?.accent || '#22d3ee'}
         />
       </div>
 
@@ -398,15 +343,40 @@ export default function VoiceStudioTab({
                 </span>
               </div>
 
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={generating || overLimit || !text.trim()}
-                onClick={handleGenerate}
-              >
-                <Sparkles size={16} />
-                {generating ? 'Generando audio...' : 'Generar audio'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  className="select mono"
+                  style={{ width: 'auto', padding: '8px 10px', fontSize: '0.78rem' }}
+                  value={audioFormat}
+                  onChange={(e) => setAudioFormat(e.target.value)}
+                  aria-label="Formato de salida"
+                >
+                  <option value="wav">WAV</option>
+                  <option value="mp3">MP3</option>
+                  <option value="ogg">OGG</option>
+                </select>
+                <select
+                  className="select mono"
+                  style={{ width: 'auto', padding: '8px 10px', fontSize: '0.78rem' }}
+                  value={synthesisSpeed}
+                  onChange={(e) => setSynthesisSpeed(Number(e.target.value))}
+                  aria-label="Velocidad de síntesis"
+                >
+                  <option value={0.8}>0.8x</option>
+                  <option value={1}>1.0x</option>
+                  <option value={1.25}>1.25x</option>
+                  <option value={1.5}>1.5x</option>
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={generating || overLimit || !text.trim() || !selectedVoice || !selectedLang}
+                  onClick={handleGenerate}
+                >
+                  <Sparkles size={16} />
+                  {generating ? 'Generando audio...' : 'Generar audio'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -417,7 +387,7 @@ export default function VoiceStudioTab({
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.94rem' }}>{generatedItem.nombreArchivo}</div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                    Voz {generatedItem.voiceName} ({generatedItem.voiceType}) · {generatedItem.languageName} · Duración aprox.{' '}
+                    Voz {generatedItem.voiceName} ({generatedItem.voiceType}) · {generatedItem.languageName} · Duración{' '}
                     <span className="mono">{generatedItem.duration}</span>
                   </div>
                 </div>
@@ -426,7 +396,7 @@ export default function VoiceStudioTab({
                     className="select mono"
                     style={{ width: 'auto', padding: '6px 10px', fontSize: '0.78rem' }}
                     value={playbackRate}
-                    onChange={(e) => setPlaybackRate(Number(e.target.value))}
+                    onChange={handlePlaybackRateChange}
                     aria-label="Velocidad de reproducción"
                   >
                     <option value={0.8}>0.8x</option>
@@ -447,7 +417,11 @@ export default function VoiceStudioTab({
                   className="play-fab"
                   onClick={() => {
                     if (isSpeaking) stopPlayback();
-                    else startPreviewSpeech(generatedItem.texto, generatedItem.languageCode, selectedVoice);
+                    else if (audioRef.current && audioRef.current.currentTime > 0 && !audioRef.current.ended) {
+                      audioRef.current.play();
+                    } else {
+                      startPlayback(generatedItem);
+                    }
                   }}
                   aria-label={isSpeaking ? 'Pausar audio' : 'Reproducir audio'}
                 >
@@ -471,61 +445,35 @@ export default function VoiceStudioTab({
             <div className="field-label">
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Globe2 size={14} color="#22d3ee" />
-                Idioma (BD PostgreSQL)
+                Idioma (PostgreSQL)
               </span>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                onClick={() => setShowAddLang((v) => !v)}
+                onClick={handleRefreshCatalog}
+                disabled={reloading}
               >
-                <Plus size={12} />
-                Nuevo
+                <RefreshCw size={12} />
+                {reloading ? 'Actualizando...' : 'Actualizar'}
               </button>
             </div>
 
             <select
               className="select"
-              value={selectedLangId}
-              onChange={(e) => setSelectedLangId(e.target.value)}
+              value={selectedLang?.id ?? ''}
+              onChange={(e) => onSelectLang(e.target.value)}
             >
               {idiomas.length === 0 ? (
                 <option value="">Sin idiomas cargados</option>
               ) : (
-                idiomas.map((lang) => (
-                  <option key={lang.id} value={lang.id}>
-                    {lang.nombre} ({lang.codigo})
+                idiomas.map((idioma) => (
+                  <option key={idioma.id} value={idioma.id}>
+                    {idioma.nombre} ({idioma.codigo})
                   </option>
                 ))
               )}
             </select>
-
-            {showAddLang && (
-              <form
-                onSubmit={handleAddLanguage}
-                style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}
-              >
-                <input
-                  className="input"
-                  style={{ padding: '8px 10px', fontSize: '0.84rem' }}
-                  placeholder="Nombre (ej. Español)"
-                  value={newLangName}
-                  onChange={(e) => setNewLangName(e.target.value)}
-                />
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    className="input mono"
-                    style={{ padding: '8px 10px', fontSize: '0.84rem' }}
-                    placeholder="Código (es-ES)"
-                    value={newLangCode}
-                    onChange={(e) => setNewLangCode(e.target.value)}
-                  />
-                  <button type="submit" className="btn btn-primary btn-sm">
-                    Crear
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
 
           {/* Voices card */}
@@ -539,7 +487,7 @@ export default function VoiceStudioTab({
                 type="button"
                 className={`badge ${onlyFavorites ? 'badge-amber' : ''}`}
                 style={{ cursor: 'pointer' }}
-                onClick={() => setOnlyFavorites((v) => !v)}
+                onClick={() => setOnlyFavorites((value) => !value)}
               >
                 <Star size={11} fill={onlyFavorites ? '#fbbf24' : 'none'} />
                 Favoritas ({favoriteVoices.length})
@@ -547,65 +495,74 @@ export default function VoiceStudioTab({
             </div>
 
             <div className="voice-grid">
-              {visibleVoices.map((voice) => {
-                const isSelected = voice.id === selectedVoiceId;
-                const isFav = favoriteVoices.includes(voice.id);
-                return (
-                  <div
-                    key={voice.id}
-                    role="button"
-                    tabIndex={0}
-                    className={`voice-card ${isSelected ? 'selected' : ''}`}
-                    onClick={() => onSelectVoice(voice.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') onSelectVoice(voice.id);
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div
-                        className="voice-orb"
-                        style={{
-                          background: `${voice.accent}22`,
-                          border: `1px solid ${voice.accent}55`,
-                        }}
-                      >
-                        <AudioLines size={18} color={voice.accent} />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <strong style={{ fontSize: '0.9rem' }}>{voice.name}</strong>
-                          <span
-                            className={`badge ${
-                              voice.type === 'Clonada' ? 'badge-emerald' : 'badge-cyan'
-                            }`}
-                            style={{ padding: '2px 7px', fontSize: '0.66rem' }}
-                          >
-                            {voice.type}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                          {voice.tone}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => toggleFavoriteVoice(voice.id, e)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 4,
-                        color: isFav ? '#fbbf24' : '#64748b',
+              {visibleVoices.length === 0 ? (
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', padding: 8 }}>
+                  No hay voces disponibles con este filtro.
+                </div>
+              ) : (
+                visibleVoices.map((voice) => {
+                  const isSelected = String(voice.id) === String(selectedVoice?.id);
+                  const isFav = isFavorite(voice.id);
+                  return (
+                    <div
+                      key={voice.id}
+                      role="button"
+                      tabIndex={0}
+                      className={`voice-card ${isSelected ? 'selected' : ''}`}
+                      onClick={() => onSelectVoice(voice.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') onSelectVoice(voice.id);
                       }}
-                      title={isFav ? 'Quitar de favoritos' : 'Guardar en favoritos'}
                     >
-                      <Star size={16} fill={isFav ? '#fbbf24' : 'none'} />
-                    </button>
-                  </div>
-                );
-              })}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div
+                          className="voice-orb"
+                          style={{
+                            background: `${voice.accent}22`,
+                            border: `1px solid ${voice.accent}55`,
+                          }}
+                        >
+                          <AudioLines size={18} color={voice.accent} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <strong style={{ fontSize: '0.9rem' }}>{voice.name}</strong>
+                            <span
+                              className={`badge ${
+                                voice.type === 'Clonada' ? 'badge-emerald' : 'badge-cyan'
+                              }`}
+                              style={{ padding: '2px 7px', fontSize: '0.66rem' }}
+                            >
+                              {voice.type}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {voice.tone}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFavoriteVoice(voice.id);
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: 4,
+                          color: isFav ? '#fbbf24' : '#64748b',
+                        }}
+                        title={isFav ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+                      >
+                        <Star size={16} fill={isFav ? '#fbbf24' : 'none'} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             <Link

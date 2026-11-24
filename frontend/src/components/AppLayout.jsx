@@ -9,7 +9,6 @@ import {
   Mic,
   Server,
   ShieldCheck,
-  Sparkles,
   X,
 } from 'lucide-react';
 import { BrandMark, ProviderIcon } from './BrandMark';
@@ -21,15 +20,15 @@ const ROUTE_META = {
   },
   '/voces': {
     title: 'Voces y Clonación',
-    subtitle: 'Catálogo de voces predeterminadas, favoritas y vistas internas',
+    subtitle: 'Catálogo de voces predeterminadas, favoritas y clonadas',
   },
   '/voces/clonar': {
     title: 'Clonación de Voz',
-    subtitle: 'Laboratorio dedicado de clonación zero-shot con Kitten TTS 2',
+    subtitle: 'Registro de muestras de referencia y solicitudes de clonación',
   },
   '/historial': {
     title: 'Historial de Audios',
-    subtitle: 'Audios generados, detalles y eliminación lógica',
+    subtitle: 'Generaciones, audios reproducibles y descargas',
   },
   '/reportes': {
     title: 'Reportes Autorizados',
@@ -37,17 +36,15 @@ const ROUTE_META = {
   },
   '/sesion': {
     title: 'Mi Cuenta y API',
-    subtitle: 'Identidad autenticada, rol, permisos e instancias del backend',
+    subtitle: 'Usuario de desarrollo, configuración del backend y endpoints',
   },
 };
 
 export default function AppLayout({
   user,
-  demoMode,
   apiBaseUrl,
-  historialCount,
+  generacionesCount,
   voicesCount,
-  loggingOut,
   onLogout,
   children,
 }) {
@@ -59,7 +56,7 @@ export default function AppLayout({
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
+    .map((part) => part[0].toUpperCase())
     .join('');
 
   const closeSidebar = () => setSidebarOpen(false);
@@ -121,7 +118,7 @@ export default function AppLayout({
                   <Clock size={17} />
                   Historial
                 </span>
-                <span className="sidebar-count mono">{historialCount}</span>
+                <span className="sidebar-count mono">{generacionesCount}</span>
               </NavLink>
             </nav>
           </div>
@@ -178,10 +175,9 @@ export default function AppLayout({
             className="btn btn-danger"
             style={{ width: '100%' }}
             onClick={onLogout}
-            disabled={loggingOut}
           >
             <LogOut size={15} />
-            {loggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+            Cerrar sesión local
           </button>
         </div>
       </aside>
@@ -215,31 +211,11 @@ export default function AppLayout({
               <Server size={12} />
               {apiBaseUrl.replace(/^https?:\/\//, '')}
             </span>
-            <span className={`badge ${demoMode ? 'badge-amber' : 'badge-emerald'}`}>
-              {demoMode ? 'Modo Demo' : 'Sesión Real'}
-            </span>
+            <span className="badge badge-emerald">Usuario local</span>
           </div>
         </header>
 
-        <main className="workspace">
-          {demoMode && (
-            <div className="demo-banner">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Sparkles size={16} color="#fbbf24" />
-                <span>
-                  <strong>Modo Vista Previa activo</strong> — Puedes navegar por todas las vistas y
-                  rutas reales. Para probar OAuth real con Twitch/Microsoft, vuelve a{' '}
-                  <span className="mono">/login</span>.
-                </span>
-              </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onLogout}>
-                Ir al Login Real
-              </button>
-            </div>
-          )}
-
-          {children}
-        </main>
+        <main className="workspace">{children}</main>
       </div>
     </div>
   );

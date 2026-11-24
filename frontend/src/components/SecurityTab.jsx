@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { CheckCircle2, KeyRound, Play, Server, ShieldCheck, XCircle } from 'lucide-react';
-import { PROTECTED_ENDPOINTS } from '../config/voxifyConfig';
-import { apiRequest } from '../services/apiClient';
-import { ProviderIcon } from './BrandMark';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle2, KeyRound, Mail, Play, Save, Server, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
+import { API_ENDPOINTS } from '../config/voxifyConfig';
+import { apiRequest, extractErrorMessage, normalizeUser } from '../services/apiClient';
 
 const RELEASE_PRESETS = [
   { label: 'Dev (.NET 5173)', url: 'http://localhost:5173' },
@@ -12,16 +11,38 @@ const RELEASE_PRESETS = [
   { label: 'Instancia 4 (:5004)', url: 'http://localhost:5004' },
 ];
 
-export default function SecurityTab({
-  user,
-  demoMode,
-  apiBaseUrl,
-  onApiBaseUrlChange,
-  showToast,
-}) {
+export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUserUpdated, showToast }) {
   const [urlInput, setUrlInput] = useState(apiBaseUrl);
   const [probeMap, setProbeMap] = useState({});
   const [testingId, setTestingId] = useState(null);
+  const [nombre, setNombre] = useState(user?.nombre || '');
+  const [correo, setCorreo] = useState(user?.correo || '');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    setNombre(user?.nombre || '');
+    setCorreo(user?.correo || '');
+  }, [user?.nombre, user?.correo]);
+
+  const handleSaveProfile = async (event) => {
+    event.preventDefault();
+    setSavingProfile(true);
+    const res = await apiRequest('/api/usuarios/me', {
+      method: 'PUT',
+      baseUrl: apiBaseUrl,
+      body: { nombre: nombre.trim(), correo: correo.trim() },
+    });
+    setSavingProfile(false);
+
+    if (!res.ok) {
+      showToast(extractErrorMessage(res, 'No se pudo actualizar el perfil.'), 'error');
+      return;
+    }
+
+    const updated = normalizeUser(res.data);
+    if (updated) onUserUpdated?.(updated);
+    showToast('Perfil actualizado en el backend .NET.');
+  };
 
   const applyUrl = (url) => {
     setUrlInput(url);
@@ -29,26 +50,13 @@ export default function SecurityTab({
     showToast(`Backend activo actualizado a ${url}`);
   };
 
-  const probeEndpoint = async (ep, includeCredentials = true) => {
-    setTestingId(ep.id);
-    if (demoMode) {
-      await new Promise((r) => setTimeout(r, 180));
-      setProbeMap((prev) => ({
-        ...prev,
-        [ep.id]: includeCredentials
-          ? { ok: true, status: 200, elapsedMs: 14, data: ep.id === 'me' ? user : { items: 3, modo: 'demo' } }
-          : { ok: false, status: 401, elapsedMs: 10, data: { error: 'No autenticado (401 Unauthorized).' } },
-      }));
-      setTestingId(null);
-      return;
-    }
-
-    const res = await apiRequest(ep.path, {
-      method: ep.method,
-      includeCredentials,
+  const probeEndpoint = async (endpoint) => {
+    setTestingId(endpoint.id);
+    const res = await apiRequest(endpoint.path, {
+      method: endpoint.method,
       baseUrl: apiBaseUrl,
     });
-    setProbeMap((prev) => ({ ...prev, [ep.id]: res }));
+    setProbeMap((prev) => ({ ...prev, [endpoint.id]: res }));
     setTestingId(null);
   };
 
@@ -56,10 +64,10 @@ export default function SecurityTab({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="section-header">
         <div>
-          <h2 className="section-title">Identidad, Sesión y Endpoints Protegidos</h2>
+          <h2 className="section-title">Mi Cuenta y API</h2>
           <p className="section-subtitle">
-            Verifica en vivo tu sesión autenticada (<span className="mono">/api/auth/me</span>),
-            cambia entre puertos de instancias del release (Punto 7) y prueba cada recurso protegido.
+            Identidad resuelta por <span className="mono">GET /api/usuarios/me</span>, configuración
+            del backend y comprobación en vivo de los recursos del estudio.
           </p>
         </div>
       </div>
@@ -70,51 +78,78 @@ export default function SecurityTab({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <KeyRound size={16} color="#22d3ee" />
-              Identidad actual (/api/auth/me)
+              Identidad actual
             </span>
             <span className="badge badge-emerald">
               <ShieldCheck size={12} />
-              Autenticado
+              {user?.estado || 'Activo'}
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 14, background: 'rgba(7, 11, 22, 0.7)', border: '1px solid var(--border-subtle)' }}>
             <div className="provider-icon-box">
-              <ProviderIcon providerId={user?.proveedor} size={22} />
+              <UserCheck size={22} color="#22d3ee" />
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: '1rem' }}>{user?.nombre}</div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                Proveedor: <strong>{user?.proveedor}</strong> · ID:{' '}
-                <span className="mono">{user?.identificador}</span>
+                ID: <span className="mono">{user?.identificador}</span> · {user?.proveedor}
               </div>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+            <Mail size={14} color="#818cf8" />
+            <span className="mono">{user?.correo || 'Sin correo'}</span>
           </div>
 
           <pre className="json-block">
             {JSON.stringify(
               {
-                autenticado: user?.autenticado,
+                idUsuario: user?.idUsuario,
                 nombre: user?.nombre,
+                correo: user?.correo,
+                estado: user?.estado,
                 proveedor: user?.proveedor,
-                identificador: user?.identificador,
-                rol: user?.rol,
-                permisos: user?.permisos,
               },
               null,
               2
             )}
           </pre>
+
+          <form
+            onSubmit={handleSaveProfile}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+          >
+            <div className="field-label">Editar perfil</div>
+            <input
+              className="input"
+              value={nombre}
+              onChange={(event) => setNombre(event.target.value)}
+              placeholder="Nombre"
+            />
+            <input
+              className="input mono"
+              type="email"
+              value={correo}
+              onChange={(event) => setCorreo(event.target.value)}
+              placeholder="correo@dominio.com"
+            />
+            <button type="submit" className="btn btn-primary btn-sm" disabled={savingProfile}>
+              <Save size={14} />
+              {savingProfile ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+          </form>
         </div>
 
         <div className="glass-card" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <Server size={16} color="#c084fc" />
-            Servidor Backend .NET (Dev / Release 4 Instancias)
+            Servidor Backend .NET
           </div>
           <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            Cambia la URL destino para validar el backend local o probar que tu cookie de sesión es
-            reconocida en las 4 instancias del Compose de release (<span className="mono">5001–5004</span>).
+            Cambia la URL destino para validar el backend local o probar las instancias del release.
+            El frontend guarda la elección en <span className="mono">localStorage</span>.
           </p>
 
           <form
@@ -151,10 +186,10 @@ export default function SecurityTab({
         </div>
       </div>
 
-      {/* Protected endpoints matrix */}
+      {/* Endpoint matrix */}
       <div className="glass-card" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontWeight: 700, fontSize: '1rem' }}>
-          Comprobación de Recursos Protegidos
+          Comprobación de Recursos del Estudio
         </div>
 
         <div className="table-wrap">
@@ -168,18 +203,18 @@ export default function SecurityTab({
               </tr>
             </thead>
             <tbody>
-              {PROTECTED_ENDPOINTS.map((ep) => {
-                const res = probeMap[ep.id];
-                const busy = testingId === ep.id;
+              {API_ENDPOINTS.map((endpoint) => {
+                const res = probeMap[endpoint.id];
+                const busy = testingId === endpoint.id;
                 return (
-                  <tr key={ep.id}>
+                  <tr key={endpoint.id}>
                     <td className="mono" style={{ whiteSpace: 'nowrap' }}>
                       <span className="badge badge-cyan" style={{ marginRight: 8 }}>
-                        {ep.method}
+                        {endpoint.method}
                       </span>
-                      {ep.path}
+                      {endpoint.path}
                     </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{ep.description}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{endpoint.description}</td>
                     <td>
                       {res ? (
                         <span
@@ -199,25 +234,15 @@ export default function SecurityTab({
                       )}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'inline-flex', gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={busy}
-                          onClick={() => probeEndpoint(ep, true)}
-                        >
-                          <Play size={12} />
-                          Con sesión
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          disabled={busy}
-                          onClick={() => probeEndpoint(ep, false)}
-                        >
-                          Sin sesión
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => probeEndpoint(endpoint)}
+                      >
+                        <Play size={12} />
+                        {busy ? 'Probando...' : 'Probar'}
+                      </button>
                     </td>
                   </tr>
                 );
