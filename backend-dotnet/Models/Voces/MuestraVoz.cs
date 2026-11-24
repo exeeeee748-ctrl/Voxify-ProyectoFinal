@@ -2,17 +2,19 @@ namespace backend_dotnet.Models.Voces;
 
 public class MuestraVoz
 {
-    public int IdMuestraVoz { get; set; }
+    public int IdMuestra { get; set; }
 
     public int IdSolicitudClonacion { get; set; }
 
-    public string Archivo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+
+    public string DireccionFisica { get; set; } = string.Empty;
+
+    public DateTime FechaSubida { get; set; } = DateTime.UtcNow;
 
     public double? DuracionSegundos { get; set; }
 
-    public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
+    public string Estado { get; set; } = "Pendiente";
 
-    public bool Activa { get; set; } = true;
-
-    public SolicitudClonacion? SolicitudClonacion { get; set; }
+    public SolicitudClonacion SolicitudClonacion { get; set; } = null!;
 }

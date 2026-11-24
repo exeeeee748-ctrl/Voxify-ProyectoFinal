@@ -12,6 +12,29 @@ namespace backend_dotnet.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // La tabla Voces ya existe en el modelo local; solo se agregan
+            // las columnas que necesita el módulo de voces.
+            migrationBuilder.AddColumn<string>(
+                name: "Descripcion",
+                table: "Voces",
+                type: "character varying(500)",
+                maxLength: 500,
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Genero",
+                table: "Voces",
+                type: "character varying(50)",
+                maxLength: 50,
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "Acento",
+                table: "Voces",
+                type: "character varying(100)",
+                maxLength: 100,
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "SolicitudesClonacion",
                 columns: table => new
@@ -26,23 +49,6 @@ namespace backend_dotnet.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_SolicitudesClonacion", x => x.IdSolicitudClonacion);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Voces",
-                columns: table => new
-                {
-                    IdVoz = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Nombre = table.Column<string>(type: "text", nullable: false),
-                    Descripcion = table.Column<string>(type: "text", nullable: true),
-                    Genero = table.Column<string>(type: "text", nullable: true),
-                    Acento = table.Column<string>(type: "text", nullable: true),
-                    Activa = table.Column<bool>(type: "boolean", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Voces", x => x.IdVoz);
                 });
 
             migrationBuilder.CreateTable(
@@ -115,8 +121,17 @@ namespace backend_dotnet.Migrations
             migrationBuilder.DropTable(
                 name: "SolicitudesClonacion");
 
-            migrationBuilder.DropTable(
-                name: "Voces");
+            migrationBuilder.DropColumn(
+                name: "Descripcion",
+                table: "Voces");
+
+            migrationBuilder.DropColumn(
+                name: "Genero",
+                table: "Voces");
+
+            migrationBuilder.DropColumn(
+                name: "Acento",
+                table: "Voces");
         }
     }
 }
