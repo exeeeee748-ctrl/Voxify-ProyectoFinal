@@ -260,6 +260,25 @@ if (oauthSettings.Twitch.IsConfigured)
 
 var app = builder.Build();
 
+if (string.Equals(Environment.GetEnvironmentVariable("AUTO_MIGRATE"), "true", StringComparison.OrdinalIgnoreCase))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<VoxifyDbContext>();
+    for (var intento = 1; intento <= 5; intento++)
+    {
+        try
+        {
+            db.Database.Migrate();
+            break;
+        }
+        catch (Exception ex) when (intento < 5)
+        {
+            Console.WriteLine($"[Voxify] Esperando PostgreSQL para migraciones (intento {intento}/5): {ex.Message}");
+            Thread.Sleep(2000);
+        }
+    }
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -300,6 +319,32 @@ app.Use(async (context, next) =>
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapGet("/health", async (VoxifyDbContext db) =>
+{
+    var conectado = await db.Database.CanConnectAsync();
+    if (!conectado)
+    {
+        return Results.Problem(
+            title: "Base de datos no disponible",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var conteos = new
+    {
+        idiomas = await db.Idiomas.CountAsync(),
+        solicitudesGeneracion = await db.SolicitudesGeneracion.CountAsync(),
+        audios = await db.Audios.CountAsync(),
+        historialAudios = await db.HistorialAudios.CountAsync()
+    };
+
+    return Results.Ok(new
+    {
+        status = "ok",
+        database = "connected",
+        tablas = conteos
+    });
+}).AllowAnonymous();
 
 app.MapControllers();
 

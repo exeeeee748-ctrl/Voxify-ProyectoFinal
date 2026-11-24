@@ -138,6 +138,55 @@ El cuerpo es opcional; todos sus campos tambien lo son:
 }
 ```
 
-`voz` acepta el nombre o el `voice_id` del catalogo del microservicio, `velocidad` va de
-`0.5` a `2.0` y `formato` acepta `wav`, `mp3` u `ogg`. La respuesta es el audio binario,
-con los headers `X-Sample-Rate`, `X-Audio-Format`, `X-Audio-Size` y `X-Duration-Seconds`.
+- `GET /api/auth/login/twitch`
+- `GET /api/auth/login/microsoft`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
+
+
+## Entorno de desarrollo con Docker Compose (Punto 4)
+
+El archivo `docker-compose.dev.yml` levanta la base de datos **PostgreSQL 16** (con volumen persistente `voxify_pgdata` y red `voxify_dev_net`) y construye el backend `.NET` a partir de `backend-dotnet/Dockerfile.EzequielGallardo`.
+
+### 1. Preparar variables de entorno
+
+```bash
+cp .env.example .env
+```
+
+Edita `.env` para colocar tus credenciales reales de `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID` y `MICROSOFT_CLIENT_SECRET`.
+
+### 2. Levantar el entorno de desarrollo
+
+```bash
+docker compose -f docker-compose.dev.yml up --build -d
+```
+
+- **Backend API:** `http://localhost:5173` (puerto interno del contenedor: `8080`)
+- **Healthcheck + conexión BD:** `http://localhost:5173/health`
+- **PostgreSQL:** `localhost:5432` (datos conservados en el volumen `voxify_pgdata`)
+
+### 3. Migraciones de la base de datos
+
+- **Automáticas (por defecto):** con `AUTO_MIGRATE=true` en `.env`, el backend ejecuta `Database.Migrate()` automáticamente al iniciar y crea las tablas (`Idiomas`, `SolicitudesGeneracion`, `Audios`, `HistorialAudios`).
+- **Manuales (alternativa desde tu máquina):** si prefieres aplicarlas manualmente con EF Core CLI (`AUTO_MIGRATE=false`):
+
+```bash
+cd backend-dotnet
+export ConnectionStrings__DefaultConnection='Host=localhost;Port=5432;Database=voxify;Username=postgres;Password=voxify_dev_pass'
+dotnet ef database update
+```
+
+### 4. Comprobar funcionamiento y persistencia
+
+```bash
+# Verificar conexión del backend con PostgreSQL y conteo de tablas
+curl -s http://localhost:5173/health
+
+# Verificar que los endpoints protegidos rechazan peticiones sin sesión (401)
+curl -i http://localhost:5173/api/Idiomas
+curl -i http://localhost:5173/api/Reportes/produccion-audios
+
+# Detener contenedores conservando el volumen de PostgreSQL
+docker compose -f docker-compose.dev.yml down
+```
