@@ -59,7 +59,8 @@ public sealed class TikTokAuthenticationHandler : OAuthHandler<TikTokOptions>
             properties.Items[CodeVerifierKey] = codeVerifier;
 
             var challenge = SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier));
-            parameters["code_challenge"] = Microsoft.AspNetCore.WebUtilities.Base64UrlTextEncoder.Encode(challenge);
+            // TikTok Login Kit v2 exige code_challenge en hexadecimal minúsculas (no Base64URL)
+            parameters["code_challenge"] = Convert.ToHexString(challenge).ToLowerInvariant();
             parameters["code_challenge_method"] = "S256";
         }
 
@@ -116,8 +117,9 @@ public sealed class TikTokAuthenticationHandler : OAuthHandler<TikTokOptions>
         var error = LeerError(payload.RootElement);
         if (!string.IsNullOrWhiteSpace(error))
         {
+            var desc = ObtenerTexto(payload.RootElement, "error_description");
             payload.Dispose();
-            Logger.LogError("TikTok devolvió un error al solicitar tokens: {Error}", error);
+            Logger.LogError("TikTok devolvió un error al solicitar tokens: {Error} ({Description})", error, desc);
             return OAuthTokenResponse.Failed(
                 new HttpRequestException("TikTok devolvió un error al solicitar tokens."));
         }

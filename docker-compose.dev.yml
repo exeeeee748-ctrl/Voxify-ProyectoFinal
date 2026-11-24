@@ -53,10 +53,27 @@ services:
       MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-http://localhost:5173/auth/microsoft/callback}
       REPORT_ALLOWED_PROVIDERS: ${REPORT_ALLOWED_PROVIDERS:-Twitch}
       REPORT_ALLOWED_USERS: ${REPORT_ALLOWED_USERS:-}
+      Tts__BaseUrl: ${TTS_BASE_URL:-http://tts:8000}
     ports:
       - "${BACKEND_PORT:-5173}:8080"
     volumes:
       - voxify_audios:/app/Storage
+    networks:
+      - voxify_dev_net
+
+  tts:
+    build:
+      context: ./backend-fastapi
+      dockerfile: Dockerfile
+    container_name: voxify-tts-dev
+    restart: unless-stopped
+    environment:
+      MODEL_NAME: ${TTS_MODEL_NAME:-KittenML/kitten-tts-2}
+      DEVICE: ${TTS_DEVICE:-cpu}
+    ports:
+      - "${TTS_PORT:-8000}:8000"
+    volumes:
+      - voxify_hf_cache:/root/.cache
     networks:
       - voxify_dev_net
 
@@ -80,6 +97,8 @@ volumes:
     name: voxify_pgdata
   voxify_audios:
     name: voxify_audios
+  voxify_hf_cache:
+    name: voxify_hf_cache
 
 networks:
   voxify_dev_net:
