@@ -8,6 +8,8 @@ venv/
 # ASP.NET Core
 bin/
 obj/
+.env
+backend-dotnet/Storage/
 
 # Visual Studio
 .vs/
@@ -19,3 +21,8 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+fastapi.venv/
+backend-fastapi/fastapi.venv/
+fastapi.venv/
+**/__pycache__/
+*.py[cod]

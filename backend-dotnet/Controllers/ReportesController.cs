@@ -35,30 +35,29 @@ public class ReportesController : ControllerBase
 
         var solicitudes = await _context.SolicitudesGeneracion
             .AsNoTracking()
-            .Where(s => s.Activo)
             .ToListAsync();
 
         var audios = await _context.Audios
             .AsNoTracking()
-            .Where(a => a.Activo)
             .ToListAsync();
 
         var historial = await _context.HistorialAudios
             .AsNoTracking()
             .ToListAsync();
 
-        var solicitudesPorIdioma = solicitudes.ToLookup(s => s.IdiomaId);
-        var audiosPorSolicitud = audios.ToLookup(a => a.SolicitudGeneracionId);
+        var solicitudesPorIdioma = solicitudes.ToLookup(s => s.IdIdioma);
+        var audiosPorId = audios.ToDictionary(a => a.IdAudio);
         var historialPorAudio = historial.ToLookup(h => h.AudioId);
 
         var filas = idiomas.Select(idioma =>
         {
-            var solIdioma = solicitudesPorIdioma[idioma.Id].ToList();
+            var solIdioma = solicitudesPorIdioma[idioma.IdIdioma].ToList();
             var audIdioma = solIdioma
-                .SelectMany(s => audiosPorSolicitud[s.Id])
+                .Where(s => s.IdAudio.HasValue && audiosPorId.ContainsKey(s.IdAudio.Value))
+                .Select(s => audiosPorId[s.IdAudio!.Value])
                 .ToList();
             var histIdioma = audIdioma
-                .SelectMany(a => historialPorAudio[a.Id])
+                .SelectMany(a => historialPorAudio[a.IdAudio])
                 .ToList();
 
             var ultimoAudio = audIdioma
@@ -73,14 +72,17 @@ public class ReportesController : ControllerBase
                 string.Equals(s.Estado, "Pendiente", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(s.Estado, "Procesando", StringComparison.OrdinalIgnoreCase));
 
+            var audiosDisponibles = audIdioma.Count(a =>
+                string.Equals(a.Estado, "Disponible", StringComparison.OrdinalIgnoreCase));
+
             return new
             {
-                idiomaId = idioma.Id,
+                idiomaId = idioma.IdIdioma,
                 idioma = $"{idioma.Nombre} ({idioma.Codigo})",
                 totalSolicitudes = solIdioma.Count,
                 completadas,
                 pendientes,
-                audiosActivos = audIdioma.Count,
+                audiosActivos = audiosDisponibles,
                 visiblesEnHistorial = histIdioma.Count(h => h.Visible),
                 ocultosEnHistorial = histIdioma.Count(h => !h.Visible),
                 ultimoAudio = ultimoAudio?.NombreArchivo ?? "Sin audios",
@@ -92,7 +94,8 @@ public class ReportesController : ControllerBase
         .ToList();
 
         var totalSolicitudesActivas = solicitudes.Count;
-        var totalAudiosActivos = audios.Count;
+        var totalAudiosActivos = audios.Count(a =>
+            string.Equals(a.Estado, "Disponible", StringComparison.OrdinalIgnoreCase));
         var tasaExito = totalSolicitudesActivas == 0
             ? 0
             : Math.Round((double)totalAudiosActivos / totalSolicitudesActivas * 100, 1);

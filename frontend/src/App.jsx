@@ -1,15 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
+import { getApiBaseUrl, setApiBaseUrl } from './config/voxifyConfig';
 import {
-  DEMO_HISTORIAL,
-  DEMO_IDIOMAS,
-  DEMO_USER,
-  KITTEN_VOICES,
-  getApiBaseUrl,
-  setApiBaseUrl,
-} from './config/voxifyConfig';
-import { apiRequest, normalizeUser } from './services/apiClient';
+  apiRequest,
+  extractErrorMessage,
+  normalizeAudio,
+  normalizeClonacion,
+  normalizeGeneracion,
+  normalizeIdioma,
+  normalizeUser,
+  normalizeVoz,
+} from './services/apiClient';
 import { BrandMark } from './components/BrandMark';
 import AppLayout from './components/AppLayout';
 import LoginView from './components/LoginView';
@@ -23,25 +25,27 @@ export default function App() {
   const navigate = useNavigate();
   const [apiBaseUrl, setApiBaseUrlState] = useState(() => getApiBaseUrl());
   const [user, setUser] = useState(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [demoMode, setDemoMode] = useState(false);
+  const [connecting, setConnecting] = useState(true);
+  const [loadingData, setLoadingData] = useState(false);
   const [idiomas, setIdiomas] = useState([]);
-  const [historial, setHistorial] = useState([]);
-  const [voices, setVoices] = useState(() => KITTEN_VOICES);
-  const [selectedVoiceId, setSelectedVoiceId] = useState(() => {
-    return window.localStorage.getItem('voxify_last_voice') || KITTEN_VOICES[0].id;
+  const [voices, setVoices] = useState([]);
+  const [favoriteVoices, setFavoriteVoices] = useState([]);
+  const [generaciones, setGeneraciones] = useState([]);
+  const [clonaciones, setClonaciones] = useState([]);
+  const [configuracion, setConfiguracion] = useState({
+    idUltimaVoz: null,
+    idUltimoIdioma: null,
+    tema: null,
   });
-  const [favoriteVoices, setFavoriteVoices] = useState(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem('voxify_fav_voices') || '["kitten-aura-es"]');
-    } catch {
-      return ['kitten-aura-es'];
-    }
-  });
-  const [logoutNotice, setLogoutNotice] = useState('');
-  const [lastLogoutProbe, setLastLogoutProbe] = useState(null);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(null);
+  const [selectedLangId, setSelectedLangId] = useState(null);
+  const [loginNotice, setLoginNotice] = useState('');
   const [toast, setToast] = useState(null);
+  const configRef = useRef(configuracion);
+
+  useEffect(() => {
+    configRef.current = configuracion;
+  }, [configuracion]);
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
@@ -49,149 +53,268 @@ export default function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 3800);
+    const timer = setTimeout(() => setToast(null), 4200);
     return () => clearTimeout(timer);
   }, [toast]);
 
-  useEffect(() => {
-    window.localStorage.setItem('voxify_last_voice', selectedVoiceId);
-  }, [selectedVoiceId]);
+  const attachAudio = useCallback(async (rawGeneraciones, baseUrl) => {
+    const generacionesNormalizadas = (rawGeneraciones || [])
+      .map(normalizeGeneracion)
+      .filter(Boolean);
 
-  useEffect(() => {
-    window.localStorage.setItem('voxify_fav_voices', JSON.stringify(favoriteVoices));
-  }, [favoriteVoices]);
+    return Promise.all(
+      generacionesNormalizadas.map(async (generacion) => {
+        if (!generacion.idAudio) return generacion;
+        const res = await apiRequest(`/api/audios/${generacion.idAudio}`, { baseUrl });
+        return res.ok
+          ? { ...generacion, audio: normalizeAudio(res.data) }
+          : generacion;
+      })
+    );
+  }, []);
 
-  const handleApiBaseUrlChange = (nextUrl) => {
-    const clean = (nextUrl || 'http://localhost:5173').trim().replace(/\/$/, '');
-    setApiBaseUrl(clean);
-    setApiBaseUrlState(clean);
-  };
-
-  const handleToggleFavoriteVoice = (id) => {
-    setFavoriteVoices((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const handleAddClonedVoice = (newVoice) => {
-    setVoices((prev) => [newVoice, ...prev]);
-    setSelectedVoiceId(newVoice.id);
-  };
-
-  const loadProtectedData = useCallback(
+  const reloadGeneraciones = useCallback(
     async (baseUrl = apiBaseUrl) => {
-      const [idiomasRes, historialRes] = await Promise.all([
-        apiRequest('/api/Idiomas', { baseUrl }),
-        apiRequest('/api/HistorialAudios', { baseUrl }),
-      ]);
-      if (idiomasRes.ok && Array.isArray(idiomasRes.data)) {
-        setIdiomas(idiomasRes.data);
+      const res = await apiRequest('/api/usuarios/me/generaciones', { baseUrl });
+      if (res.ok && Array.isArray(res.data)) {
+        setGeneraciones(await attachAudio(res.data, baseUrl));
       }
-      if (historialRes.ok && Array.isArray(historialRes.data)) {
-        setHistorial(historialRes.data);
+    },
+    [apiBaseUrl, attachAudio]
+  );
+
+  const reloadClonaciones = useCallback(
+    async (baseUrl = apiBaseUrl) => {
+      const res = await apiRequest('/api/usuarios/me/clonaciones', { baseUrl });
+      if (res.ok && Array.isArray(res.data)) {
+        setClonaciones(res.data.map(normalizeClonacion).filter(Boolean));
       }
     },
     [apiBaseUrl]
   );
 
+  const loadData = useCallback(
+    async (baseUrl = apiBaseUrl) => {
+      setLoadingData(true);
+
+      const [idiomasRes, vocesRes, clonadasRes, favoritosRes, generacionesRes, clonacionesRes, configRes] =
+        await Promise.all([
+          apiRequest('/api/idiomas', { baseUrl }),
+          apiRequest('/api/voces', { baseUrl }),
+          apiRequest('/api/usuarios/me/voces-clonadas', { baseUrl }),
+          apiRequest('/api/usuarios/me/favoritos/voces', { baseUrl }),
+          apiRequest('/api/usuarios/me/generaciones', { baseUrl }),
+          apiRequest('/api/usuarios/me/clonaciones', { baseUrl }),
+          apiRequest('/api/usuarios/me/configuracion', { baseUrl }),
+        ]);
+
+      const idiomasData =
+        idiomasRes.ok && Array.isArray(idiomasRes.data)
+          ? idiomasRes.data.map(normalizeIdioma).filter(Boolean)
+          : [];
+
+      const predeterminadas =
+        vocesRes.ok && Array.isArray(vocesRes.data)
+          ? vocesRes.data.map((voz, index) => normalizeVoz(voz, index)).filter(Boolean)
+          : [];
+
+      const clonadasRaw =
+        clonadasRes.ok && Array.isArray(clonadasRes.data) ? clonadasRes.data : [];
+      const clonadas = clonadasRaw
+        .map((voz, index) =>
+          normalizeVoz(
+            { ...voz, tipo: 'Clonada', estado: voz.estado ?? 'Disponible' },
+            predeterminadas.length + index
+          )
+        )
+        .filter(Boolean);
+
+      const todasLasVoces = [...predeterminadas, ...clonadas];
+
+      const favoritos =
+        favoritosRes.ok && Array.isArray(favoritosRes.data)
+          ? favoritosRes.data
+              .map((voz) => normalizeVoz(voz))
+              .filter(Boolean)
+              .map((voz) => voz.id)
+          : [];
+
+      const generacionesData =
+        generacionesRes.ok && Array.isArray(generacionesRes.data)
+          ? await attachAudio(generacionesRes.data, baseUrl)
+          : [];
+
+      const clonacionesData =
+        clonacionesRes.ok && Array.isArray(clonacionesRes.data)
+          ? clonacionesRes.data.map(normalizeClonacion).filter(Boolean)
+          : [];
+
+      const configData =
+        configRes.ok && configRes.data
+          ? {
+              idUltimaVoz: configRes.data.idUltimaVoz ?? configRes.data.IdUltimaVoz ?? null,
+              idUltimoIdioma:
+                configRes.data.idUltimoIdioma ?? configRes.data.IdUltimoIdioma ?? null,
+              tema: configRes.data.tema ?? configRes.data.Tema ?? null,
+            }
+          : { idUltimaVoz: null, idUltimoIdioma: null, tema: null };
+
+      setIdiomas(idiomasData);
+      setVoices(todasLasVoces);
+      setFavoriteVoices(favoritos);
+      setGeneraciones(generacionesData);
+      setClonaciones(clonacionesData);
+      setConfiguracion(configData);
+      configRef.current = configData;
+
+      setSelectedVoiceId((prev) => {
+        const candidato = prev ?? configData.idUltimaVoz ?? todasLasVoces[0]?.id ?? null;
+        return todasLasVoces.some((voz) => String(voz.id) === String(candidato))
+          ? candidato
+          : todasLasVoces[0]?.id ?? null;
+      });
+
+      setSelectedLangId((prev) => {
+        const candidato = prev ?? configData.idUltimoIdioma ?? idiomasData[0]?.id ?? null;
+        return idiomasData.some((idioma) => String(idioma.id) === String(candidato))
+          ? candidato
+          : idiomasData[0]?.id ?? null;
+      });
+
+      setLoadingData(false);
+      return { idiomas: idiomasData, voices: todasLasVoces, generaciones: generacionesData };
+    },
+    [apiBaseUrl, attachAudio]
+  );
+
   const checkSession = useCallback(
     async (baseUrl = apiBaseUrl) => {
-      setCheckingAuth(true);
-      const res = await apiRequest('/api/auth/me', { baseUrl });
-      if (res.ok) {
-        const normalized = normalizeUser(res.data);
+      setConnecting(true);
+
+      const authRes = await apiRequest('/api/auth/me', { baseUrl });
+      if (authRes.ok) {
+        const normalized = normalizeUser(authRes.data);
         if (normalized) {
           setUser(normalized);
-          setDemoMode(false);
-          setLogoutNotice('');
-          await loadProtectedData(baseUrl);
-          setCheckingAuth(false);
-          return;
+          setLoginNotice('');
+          await loadData(baseUrl);
+          setConnecting(false);
+          return true;
         }
       }
+
       setUser(null);
-      setCheckingAuth(false);
+      setConnecting(false);
+      return false;
     },
-    [apiBaseUrl, loadProtectedData]
+    [apiBaseUrl, loadData]
   );
 
   useEffect(() => {
     checkSession(apiBaseUrl);
   }, [apiBaseUrl, checkSession]);
 
-  const handleEnterDemoMode = () => {
-    setDemoMode(true);
-    setUser(DEMO_USER);
-    setIdiomas(DEMO_IDIOMAS);
-    setHistorial(DEMO_HISTORIAL);
-    setLogoutNotice('');
-    navigate('/estudio', { replace: true });
-    showToast('Vista previa activada. Explora todas las vistas desde la barra lateral.');
+  const handleApiBaseUrlChange = (nextUrl) => {
+    const clean = (nextUrl || 'http://localhost:5173').trim().replace(/\/$/, '');
+    setApiBaseUrl(clean);
+    setApiBaseUrlState(clean);
+    setLoginNotice('');
   };
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
+  const saveConfig = useCallback(
+    async (patch) => {
+      const next = { ...configRef.current, ...patch };
+      configRef.current = next;
+      setConfiguracion(next);
 
-    if (demoMode) {
-      setDemoMode(false);
-      setUser(null);
-      setLogoutNotice(
-        'Saliste de la vista previa. Inicia sesión con Twitch o Microsoft para usar el backend real.'
-      );
-      setLastLogoutProbe(null);
-      setLoggingOut(false);
-      navigate('/login', { replace: true });
-      return;
-    }
+      const res = await apiRequest('/api/usuarios/me/configuracion', {
+        method: 'PUT',
+        baseUrl: apiBaseUrl,
+        body: next,
+      });
 
-    const logoutRes = await apiRequest('/api/auth/logout', {
-      method: 'POST',
+      if (!res.ok) {
+        showToast('No se pudo guardar la preferencia en el backend.', 'error');
+      }
+    },
+    [apiBaseUrl, showToast]
+  );
+
+  const handleSelectVoice = (voiceId) => {
+    setSelectedVoiceId(voiceId);
+    saveConfig({ idUltimaVoz: Number(voiceId) });
+  };
+
+  const handleSelectLang = (langId) => {
+    setSelectedLangId(langId);
+    saveConfig({ idUltimoIdioma: Number(langId) });
+  };
+
+  const handleToggleFavoriteVoice = async (voiceId) => {
+    const id = Number(voiceId);
+    const yaEsFavorita = favoriteVoices.some((favorito) => String(favorito) === String(id));
+
+    setFavoriteVoices((prev) =>
+      yaEsFavorita ? prev.filter((favorito) => String(favorito) !== String(id)) : [...prev, id]
+    );
+
+    const res = await apiRequest(`/api/usuarios/me/favoritos/voces/${id}`, {
+      method: yaEsFavorita ? 'DELETE' : 'POST',
       baseUrl: apiBaseUrl,
     });
 
-    const verifyAfterLogout = await apiRequest('/api/auth/me', {
-      method: 'GET',
+    if (!res.ok) {
+      setFavoriteVoices((prev) =>
+        yaEsFavorita ? [...prev, id] : prev.filter((favorito) => String(favorito) !== String(id))
+      );
+      showToast(`No se pudo actualizar el favorito (HTTP ${res.status}).`, 'error');
+    }
+  };
+
+  const handleDevLogin = async () => {
+    setConnecting(true);
+    const res = await apiRequest('/api/auth/dev-login', {
+      method: 'POST',
+      baseUrl: apiBaseUrl,
+    });
+    setConnecting(false);
+
+    if (!res.ok) {
+      setLoginNotice(
+        extractErrorMessage(
+          res,
+          'El acceso de desarrollo está deshabilitado o el backend no está disponible.'
+        )
+      );
+      showToast('No se pudo iniciar la sesión de desarrollo.', 'error');
+      return;
+    }
+
+    const ok = await checkSession(apiBaseUrl);
+    if (ok) {
+      navigate('/estudio', { replace: true });
+      showToast('Sesión de desarrollo iniciada con el backend .NET.');
+    }
+  };
+
+  const handleLogout = async () => {
+    await apiRequest('/api/auth/logout', {
+      method: 'POST',
       baseUrl: apiBaseUrl,
     });
 
     setUser(null);
     setIdiomas([]);
-    setHistorial([]);
-    setLastLogoutProbe({ path: '/api/auth/me', ...verifyAfterLogout });
-    setLogoutNotice(
-      logoutRes.ok
-        ? 'Sesión cerrada correctamente. Se comprobó que /api/auth/me ahora rechaza el acceso.'
-        : 'Sesión local cerrada. Verifica el estado del backend.'
-    );
-    setLoggingOut(false);
+    setVoices([]);
+    setFavoriteVoices([]);
+    setGeneraciones([]);
+    setClonaciones([]);
+    setLoginNotice('Sesión cerrada correctamente. Vuelve a iniciar sesión con un proveedor.');
     navigate('/login', { replace: true });
   };
 
-  const handleAudioGenerated = (item) => {
-    if (demoMode) {
-      const nextHist = {
-        id: Math.floor(Math.random() * 900 + 200),
-        audioId: item.id,
-        fechaRegistro: item.fechaCreacion,
-        visible: true,
-        voiceName: item.voiceName,
-        languageName: item.languageName,
-        duration: item.duration,
-        texto: item.texto,
-        audio: {
-          id: item.id,
-          nombreArchivo: item.nombreArchivo,
-          rutaArchivo: `/audios/${item.nombreArchivo}`,
-          fechaCreacion: item.fechaCreacion,
-          activo: true,
-        },
-      };
-      setHistorial((prev) => [nextHist, ...prev]);
-    } else {
-      loadProtectedData(apiBaseUrl);
-    }
-  };
-
-  const handleHideDemoItem = (id) => {
-    setHistorial((prev) => prev.filter((item) => item.id !== id));
+  const handleAudioGenerated = async () => {
+    await reloadGeneraciones(apiBaseUrl);
   };
 
   const wrapProtected = (element) => {
@@ -199,11 +322,8 @@ export default function App() {
     return (
       <AppLayout
         user={user}
-        demoMode={demoMode}
-        apiBaseUrl={apiBaseUrl}
-        historialCount={historial.length}
+        generacionesCount={generaciones.length}
         voicesCount={voices.length}
-        loggingOut={loggingOut}
         onLogout={handleLogout}
       >
         {element}
@@ -217,7 +337,7 @@ export default function App() {
       <div className="voxify-grid-overlay" />
 
       <div className="app-shell">
-        {checkingAuth ? (
+        {connecting ? (
           <div
             style={{
               flex: 1,
@@ -231,7 +351,7 @@ export default function App() {
           >
             <BrandMark playing />
             <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              Verificando sesión con <span className="mono">{apiBaseUrl}/api/auth/me</span>...
+              Conectando con <span className="mono">{apiBaseUrl}/api/usuarios/me</span>...
             </span>
           </div>
         ) : (
@@ -245,9 +365,9 @@ export default function App() {
                   <LoginView
                     apiBaseUrl={apiBaseUrl}
                     onApiBaseUrlChange={handleApiBaseUrlChange}
-                    logoutNotice={logoutNotice}
-                    lastLogoutProbe={lastLogoutProbe}
-                    onEnterDemoMode={handleEnterDemoMode}
+                    onDevLogin={handleDevLogin}
+                    connecting={connecting}
+                    notice={loginNotice}
                   />
                 )
               }
@@ -257,15 +377,16 @@ export default function App() {
               path="/estudio"
               element={wrapProtected(
                 <VoiceStudioTab
-                  demoMode={demoMode}
                   apiBaseUrl={apiBaseUrl}
                   idiomas={idiomas}
                   voices={voices}
                   selectedVoiceId={selectedVoiceId}
+                  selectedLangId={selectedLangId}
                   favoriteVoices={favoriteVoices}
-                  onSelectVoice={setSelectedVoiceId}
+                  onSelectVoice={handleSelectVoice}
+                  onSelectLang={handleSelectLang}
                   onToggleFavoriteVoice={handleToggleFavoriteVoice}
-                  onReloadIdiomas={() => loadProtectedData(apiBaseUrl)}
+                  onReloadCatalog={() => loadData(apiBaseUrl)}
                   onAudioGenerated={handleAudioGenerated}
                   showToast={showToast}
                 />
@@ -276,12 +397,14 @@ export default function App() {
               path="/voces/*"
               element={wrapProtected(
                 <VoicesCloningTab
+                  apiBaseUrl={apiBaseUrl}
                   voices={voices}
                   selectedVoiceId={selectedVoiceId}
                   favoriteVoices={favoriteVoices}
-                  onSelectVoice={setSelectedVoiceId}
+                  clonaciones={clonaciones}
+                  onSelectVoice={handleSelectVoice}
                   onToggleFavoriteVoice={handleToggleFavoriteVoice}
-                  onAddClonedVoice={handleAddClonedVoice}
+                  onReloadClonaciones={() => reloadClonaciones(apiBaseUrl)}
                   showToast={showToast}
                 />
               )}
@@ -291,11 +414,9 @@ export default function App() {
               path="/historial"
               element={wrapProtected(
                 <HistoryTab
-                  demoMode={demoMode}
                   apiBaseUrl={apiBaseUrl}
-                  historial={historial}
-                  onReloadHistorial={() => loadProtectedData(apiBaseUrl)}
-                  onHideDemoItem={handleHideDemoItem}
+                  generaciones={generaciones}
+                  onReload={() => reloadGeneraciones(apiBaseUrl)}
                   showToast={showToast}
                 />
               )}
@@ -304,12 +425,7 @@ export default function App() {
             <Route
               path="/reportes"
               element={wrapProtected(
-                <ReportsTab
-                  user={user}
-                  demoMode={demoMode}
-                  apiBaseUrl={apiBaseUrl}
-                  showToast={showToast}
-                />
+                <ReportsTab user={user} apiBaseUrl={apiBaseUrl} showToast={showToast} />
               )}
             />
 
@@ -318,9 +434,9 @@ export default function App() {
               element={wrapProtected(
                 <SecurityTab
                   user={user}
-                  demoMode={demoMode}
                   apiBaseUrl={apiBaseUrl}
                   onApiBaseUrlChange={handleApiBaseUrlChange}
+                  onUserUpdated={setUser}
                   showToast={showToast}
                 />
               )}
@@ -330,6 +446,15 @@ export default function App() {
           </Routes>
         )}
       </div>
+
+      {loadingData && (
+        <div
+          className="badge badge-cyan"
+          style={{ position: 'fixed', right: 18, bottom: 18, zIndex: 60, padding: '8px 12px' }}
+        >
+          Actualizando datos...
+        </div>
+      )}
 
       {toast && (
         <div

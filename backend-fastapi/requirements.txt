@@ -57,3 +57,10 @@ uvicorn==0.54.0
 uvloop==0.23.0
 watchfiles==1.3.0
 websockets==17.4
+
+# Dependencias directas del motor TTS y codificacion de audio
+kittenml==0.9.8
+kitten-text-processing==0.1.0
+numpy==2.5.5
+soundfile==0.14.0
+scalar-fastapi==1.10.1

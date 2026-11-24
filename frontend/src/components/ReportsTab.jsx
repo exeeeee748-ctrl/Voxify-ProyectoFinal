@@ -6,13 +6,12 @@ import {
   Lock,
   Play,
   ShieldAlert,
-  ShieldBan,
   ShieldCheck,
   Table2,
   UserCheck,
 } from 'lucide-react';
 import { AUTHORIZED_REPORTS } from '../config/voxifyConfig';
-import { apiRequest } from '../services/apiClient';
+import { apiRequest, extractErrorMessage } from '../services/apiClient';
 
 function extractRows(payload) {
   if (Array.isArray(payload)) return payload;
@@ -32,86 +31,32 @@ function formatCell(value) {
   return String(value);
 }
 
-export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
+export default function ReportsTab({ user, apiBaseUrl, showToast }) {
   const [resultsByReport, setResultsByReport] = useState({});
   const [loadingMap, setLoadingMap] = useState({});
   const [viewMode, setViewMode] = useState('table');
   const [customEndpoint, setCustomEndpoint] = useState('/api/Reportes/produccion-audios');
 
-  const executeReport = async (report, mode = 'with-session') => {
+  const executeReport = async (report, includeCredentials = true) => {
     setLoadingMap((prev) => ({ ...prev, [report.id]: true }));
-
-    if (demoMode) {
-      await new Promise((r) => setTimeout(r, 220));
-      if (mode === 'with-session' && report.demoPayload) {
-        setResultsByReport((prev) => ({
-          ...prev,
-          [report.id]: {
-            ok: true,
-            status: 200,
-            elapsedMs: 18,
-            mode,
-            data: report.demoPayload,
-            url: `${apiBaseUrl}${report.endpoint}`,
-          },
-        }));
-        showToast('Reporte autorizado cargado en vista previa (200 OK).');
-      } else if (mode === 'demo-forbidden') {
-        setResultsByReport((prev) => ({
-          ...prev,
-          [report.id]: {
-            ok: false,
-            status: 403,
-            elapsedMs: 14,
-            mode,
-            data: {
-              error: 'Acceso denegado. No tienes permisos suficientes para este recurso.',
-              requerido: 'Rol AnalistaReportes + permiso reportes:produccion:leer',
-            },
-            url: `${apiBaseUrl}${report.endpoint}`,
-          },
-        }));
-        showToast('Rechazo por falta de permisos: 403 Forbidden.');
-      } else {
-        setResultsByReport((prev) => ({
-          ...prev,
-          [report.id]: {
-            ok: false,
-            status: 401,
-            elapsedMs: 12,
-            mode,
-            data: {
-              error: 'No autenticado. Inicia sesión para acceder a este recurso.',
-            },
-            url: `${apiBaseUrl}${report.endpoint}`,
-          },
-        }));
-        showToast('Rechazo sin sesión: 401 Unauthorized.');
-      }
-      setLoadingMap((prev) => ({ ...prev, [report.id]: false }));
-      return;
-    }
 
     const res = await apiRequest(report.endpoint, {
       method: 'GET',
-      includeCredentials: mode === 'with-session',
+      includeCredentials,
       baseUrl: apiBaseUrl,
     });
 
-    setResultsByReport((prev) => ({
-      ...prev,
-      [report.id]: { ...res, mode },
-    }));
+    setResultsByReport((prev) => ({ ...prev, [report.id]: res }));
     setLoadingMap((prev) => ({ ...prev, [report.id]: false }));
 
     if (res.ok) {
       showToast(`Reporte consultado correctamente (HTTP ${res.status}).`);
     } else if (res.status === 401) {
-      showToast('Acceso rechazado por el backend: 401 Unauthorized (sin sesión).');
+      showToast('El reporte requiere una sesión con rol AnalistaReportes.', 'error');
     } else if (res.status === 403) {
-      showToast('Acceso denegado por el backend: 403 Forbidden (sin permiso requerido).');
+      showToast('Acceso denegado: falta el permiso reportes:produccion:leer.', 'error');
     } else {
-      showToast(`Respuesta HTTP ${res.status || 'Sin conexión'} al consultar el reporte.`, 'error');
+      showToast(extractErrorMessage(res, `Respuesta HTTP ${res.status || 'sin conexión'}.`), 'error');
     }
   };
 
@@ -120,18 +65,19 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
       id: 'custom',
       endpoint: customEndpoint.trim() || '/api/Reportes/produccion-audios',
     };
-    await executeReport(synthetic, includeCredentials ? 'with-session' : 'without-session');
+    await executeReport(synthetic, includeCredentials);
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="section-header">
         <div>
-          <h2 className="section-title">Reportes Autorizados por Integrante</h2>
+          <h2 className="section-title">Reportes Autorizados</h2>
           <p className="section-subtitle">
-            Punto 2: la autorización se valida en el backend .NET. El botón siempre es visible para
-            demostrar el acceso permitido (<span className="mono">200 OK</span>), sin sesión (
-            <span className="mono">401</span>) y sin permisos (<span className="mono">403</span>).
+            La autorización se valida en el backend .NET mediante la política{' '}
+            <span className="mono">ReporteProduccionAudios</span>. Si tu proveedor no tiene el rol
+            <span className="mono"> AnalistaReportes</span>, la consulta devolverá{' '}
+            <span className="mono">401</span> o <span className="mono">403</span>.
           </p>
         </div>
 
@@ -155,7 +101,6 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
         </div>
       </div>
 
-      {/* Current user authorization badge bar */}
       <div
         className="glass-panel"
         style={{
@@ -169,17 +114,13 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <Lock size={15} color="#22d3ee" />
-          <span style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>Tu sesión actual:</span>
-          <span className="badge badge-violet">Rol: {user?.rol || 'Usuario'}</span>
-          {(user?.permisos || []).map((perm) => (
-            <span key={perm} className="badge badge-cyan mono">
-              {perm}
-            </span>
-          ))}
+          <span style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>Usuario actual:</span>
+          <span className="badge badge-violet">{user?.nombre || 'Usuario de desarrollo'}</span>
+          <span className="badge badge-cyan mono">{user?.correo || 'dev@voxify.local'}</span>
+          <span className="badge">Rol: {user?.rol || 'Usuario'}</span>
         </div>
         <span style={{ fontSize: '0.77rem', color: 'var(--text-muted)' }}>
-          Por defecto: Twitch → <span className="mono">AnalistaReportes (200)</span> · Microsoft →{' '}
-          <span className="mono">Usuario (403)</span>
+          El rol <span className="mono">AnalistaReportes</span> se habilita al integrar OAuth.
         </span>
       </div>
 
@@ -220,31 +161,20 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
                   type="button"
                   className="btn btn-primary btn-sm"
                   disabled={isLoading}
-                  onClick={() => executeReport(report, 'with-session')}
+                  onClick={() => executeReport(report, true)}
                 >
                   <Play size={14} />
-                  {isLoading ? 'Consultando...' : 'Consultar con sesión'}
+                  {isLoading ? 'Consultando...' : 'Consultar reporte'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"
                   disabled={isLoading}
-                  onClick={() => executeReport(report, 'without-session')}
+                  onClick={() => executeReport(report, false)}
                 >
                   <ShieldAlert size={14} />
-                  Sin sesión (401)
+                  Sin credenciales
                 </button>
-                {demoMode && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={isLoading}
-                    onClick={() => executeReport(report, 'demo-forbidden')}
-                  >
-                    <ShieldBan size={14} />
-                    Sin permiso (403)
-                  </button>
-                )}
               </div>
             </div>
 
@@ -261,9 +191,9 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
                 <Database size={13} />
                 Tablas:
               </span>
-              {report.tables.map((t) => (
-                <span key={t} className="badge mono">
-                  {t}
+              {report.tables.map((table) => (
+                <span key={table} className="badge mono">
+                  {table}
                 </span>
               ))}
               <span className="badge badge-emerald" style={{ marginLeft: 'auto' }}>
@@ -301,7 +231,7 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
                       {result.ok
                         ? 'OK · Autorizado'
                         : result.status === 401
-                          ? 'Unauthorized · Sin sesión'
+                          ? 'Unauthorized · Falta rol o sesión'
                           : result.status === 403
                             ? 'Forbidden · Sin permisos'
                             : ''}
@@ -314,6 +244,26 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
                     {result.elapsedMs} ms
                   </span>
                 </div>
+
+                {!result.ok && (
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 12,
+                      background: 'rgba(251, 191, 36, 0.08)',
+                      border: '1px solid rgba(251, 191, 36, 0.3)',
+                      fontSize: '0.84rem',
+                      color: '#fde68a',
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {result.status === 401
+                      ? 'El endpoint está protegido por la política ReporteProduccionAudios. Inicia sesión con un proveedor que tenga el rol AnalistaReportes (Twitch por defecto) para consultarlo.'
+                      : result.status === 403
+                        ? 'El usuario no tiene el permiso reportes:produccion:leer.'
+                        : extractErrorMessage(result, 'No se pudo consultar el reporte.')}
+                  </div>
+                )}
 
                 {resumen && viewMode === 'table' && (
                   <div className="stats-grid">
@@ -348,16 +298,16 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
                     <table className="vox-table">
                       <thead>
                         <tr>
-                          {columns.map((col) => (
-                            <th key={col}>{col}</th>
+                          {columns.map((column) => (
+                            <th key={column}>{column}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {rows.map((row, idx) => (
-                          <tr key={idx}>
-                            {columns.map((col) => (
-                              <td key={col}>{formatCell(row[col])}</td>
+                        {rows.map((row, index) => (
+                          <tr key={index}>
+                            {columns.map((column) => (
+                              <td key={column}>{formatCell(row[column])}</td>
                             ))}
                           </tr>
                         ))}
@@ -373,10 +323,9 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
         );
       })}
 
-      {/* Quick tester for additional team report endpoints */}
       <div className="glass-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontWeight: 700, fontSize: '0.94rem' }}>
-          Probar cualquier endpoint de reporte de otro integrante
+          Probar cualquier endpoint de reporte
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <input
@@ -391,14 +340,14 @@ export default function ReportsTab({ user, demoMode, apiBaseUrl, showToast }) {
             className="btn btn-primary btn-sm"
             onClick={() => runCustomReport(true)}
           >
-            Consultar con sesión
+            Consultar
           </button>
           <button
             type="button"
             className="btn btn-danger btn-sm"
             onClick={() => runCustomReport(false)}
           >
-            Probar sin sesión
+            Sin credenciales
           </button>
         </div>
 

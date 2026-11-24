@@ -1,43 +1,72 @@
 import React, { useState } from 'react';
-import { Clock, EyeOff, FileAudio2, Info, RefreshCw } from 'lucide-react';
-import { apiRequest } from '../services/apiClient';
+import {
+  Clock,
+  Download,
+  EyeOff,
+  FileAudio2,
+  Info,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  apiRequest,
+  downloadAudioFile,
+  extractErrorMessage,
+  getAudioUrl,
+} from '../services/apiClient';
+import { formatBytes, formatDate, formatDuration, truncate } from '../utils/format';
 
-export default function HistoryTab({
-  demoMode,
-  apiBaseUrl,
-  historial,
-  onReloadHistorial,
-  onHideDemoItem,
-  showToast,
-}) {
+function statusBadge(status) {
+  if (status === 'Completada' || status === 'Completado') return 'badge-emerald';
+  if (status === 'Fallida' || status === 'Fallido') return 'badge-rose';
+  if (status === 'Procesando') return 'badge-amber';
+  return 'badge-violet';
+}
+
+export default function HistoryTab({ apiBaseUrl, generaciones, onReload, showToast }) {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [hidingId, setHidingId] = useState(null);
+  const [showHidden, setShowHidden] = useState(false);
+
+  const ocultosCount = generaciones.filter((item) => item.audio?.estado === 'Oculto').length;
+  const generacionesVisibles = showHidden
+    ? generaciones
+    : generaciones.filter((item) => item.audio?.estado !== 'Oculto');
 
   const handleRefresh = async () => {
     setLoading(true);
-    await onReloadHistorial();
+    await onReload();
     setLoading(false);
   };
 
-  const handleHide = async (item) => {
-    if (demoMode) {
-      onHideDemoItem(item.id);
-      if (selectedDetail?.id === item.id) setSelectedDetail(null);
-      showToast('Audio ocultado del historial (eliminación lógica).');
+  const handleDownload = async (audio) => {
+    try {
+      await downloadAudioFile(audio.id, audio.nombreArchivo || 'audio', apiBaseUrl);
+      showToast(`Descargando ${audio.nombreArchivo || 'audio'}...`);
+    } catch (error) {
+      showToast(error.message || 'No se pudo descargar el audio.', 'error');
+    }
+  };
+
+  const handleHide = async (generacion) => {
+    if (!generacion.idAudio) {
+      showToast('Esta generación no tiene un audio asociado.', 'error');
       return;
     }
 
-    const res = await apiRequest(`/api/HistorialAudios/${item.id}`, {
+    setHidingId(generacion.idAudio);
+    const res = await apiRequest(`/api/audios/${generacion.idAudio}`, {
       method: 'DELETE',
       baseUrl: apiBaseUrl,
     });
+    setHidingId(null);
 
     if (res.ok) {
-      if (selectedDetail?.id === item.id) setSelectedDetail(null);
-      await onReloadHistorial();
-      showToast('Registro ocultado lógicamente en el backend (Visible = false).');
+      if (selectedDetail?.id === generacion.id) setSelectedDetail(null);
+      await onReload();
+      showToast('Audio ocultado correctamente (Estado = Oculto).');
     } else {
-      showToast(`No se pudo ocultar el registro (HTTP ${res.status}).`, 'error');
+      showToast(extractErrorMessage(res, 'No se pudo ocultar el audio.'), 'error');
     }
   };
 
@@ -47,25 +76,42 @@ export default function HistoryTab({
         <div>
           <h2 className="section-title">Historial de Audios</h2>
           <p className="section-subtitle">
-            Registros visibles desde <span className="mono">GET /api/HistorialAudios</span> con
-            eliminación lógica (<span className="mono">DELETE /api/HistorialAudios/&#123;id&#125;</span>).
+            Generaciones del usuario desde{' '}
+            <span className="mono">GET /api/usuarios/me/generaciones</span>, con reproducción y
+            descarga desde <span className="mono">/api/audios/&#123;id&#125;</span>.
           </p>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={handleRefresh} disabled={loading}>
-          <RefreshCw size={14} />
-          {loading ? 'Actualizando...' : 'Actualizar lista'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {ocultosCount > 0 && (
+            <button
+              type="button"
+              className={`badge ${showHidden ? 'badge-amber' : ''}`}
+              style={{ cursor: 'pointer' }}
+              onClick={() => setShowHidden((value) => !value)}
+            >
+              {showHidden ? 'Ocultar registros ocultos' : `Mostrar ocultos (${ocultosCount})`}
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw size={14} />
+            {loading ? 'Actualizando...' : 'Actualizar lista'}
+          </button>
+        </div>
       </div>
 
       <div className="glass-card" style={{ padding: 20 }}>
-        {historial.length === 0 ? (
+        {generacionesVisibles.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-secondary)' }}>
             <FileAudio2 size={32} style={{ opacity: 0.5, marginBottom: 10 }} />
             <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-              No hay registros visibles en tu historial
+              {generaciones.length === 0
+                ? 'Aún no tienes generaciones registradas'
+                : 'No hay registros visibles en el historial'}
             </div>
             <p style={{ fontSize: '0.84rem', margin: '6px 0 0' }}>
-              Genera un audio desde el Estudio de Voz o crea registros desde la API.
+              {generaciones.length === 0
+                ? 'Genera un audio desde el Estudio de Voz para verlo aquí.'
+                : 'Puedes mostrar los audios ocultos con el botón superior.'}
             </p>
           </div>
         ) : (
@@ -74,68 +120,106 @@ export default function HistoryTab({
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Archivo de Audio</th>
-                  <th>Fecha de Registro</th>
-                  <th>Detalles</th>
+                  <th>Texto</th>
+                  <th>Voz / Idioma</th>
+                  <th>Fecha</th>
+                  <th>Estado</th>
+                  <th>Audio</th>
                   <th style={{ textAlign: 'right' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {historial.map((item) => {
-                  const audio = item.audio || {};
-                  const fecha = item.fechaRegistro
-                    ? new Date(item.fechaRegistro).toLocaleString('es-BO', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })
-                    : '—';
+                {generacionesVisibles.map((generacion) => {
+                  const audio = generacion.audio;
+                  const oculto = audio?.estado === 'Oculto';
                   return (
-                    <tr key={item.id}>
-                      <td className="mono">#{item.id}</td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <FileAudio2 size={16} color="#22d3ee" />
-                          <div>
-                            <div style={{ fontWeight: 700 }}>
-                              {audio.nombreArchivo || `Audio #${item.audioId}`}
-                            </div>
-                            <div className="mono" style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                              {audio.rutaArchivo || '/audios/archivo.mp3'}
-                            </div>
+                    <tr key={generacion.id}>
+                      <td className="mono">#{generacion.id}</td>
+                      <td style={{ maxWidth: 300 }}>
+                        <div style={{ fontWeight: 600 }}>{truncate(generacion.texto, 80)}</div>
+                        {generacion.mensajeError && (
+                          <div style={{ fontSize: '0.74rem', color: 'var(--rose)', marginTop: 2 }}>
+                            {generacion.mensajeError}
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-                          <Clock size={13} />
-                          {fecha}
-                        </span>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {item.voiceName && <span className="badge badge-violet">{item.voiceName}</span>}
-                          {item.languageName && <span className="badge badge-cyan">{item.languageName}</span>}
-                          {item.duration && <span className="badge mono">{item.duration}</span>}
-                          {!item.voiceName && <span className="badge badge-emerald">Visible</span>}
+                          <span className="badge badge-violet">
+                            {generacion.nombreVoz || `Voz #${generacion.idVoz}`}
+                          </span>
+                          <span className="badge badge-cyan">
+                            {generacion.nombreIdioma || `Idioma #${generacion.idIdioma}`}
+                          </span>
                         </div>
+                      </td>
+                      <td>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <Clock size={13} />
+                          {formatDate(generacion.fechaSolicitud)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${statusBadge(generacion.estado)}`}>
+                          {generacion.estado || 'Sin estado'}
+                        </span>
+                      </td>
+                      <td>
+                        {audio ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <audio
+                              className="audio-inline"
+                              controls
+                              preload="none"
+                              crossOrigin="use-credentials"
+                              src={getAudioUrl(audio.id, 'reproducir', apiBaseUrl)}
+                            />
+                            <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                              {formatDuration(audio.duracionSegundos)} · {formatBytes(audio.tamanoBytes)} ·{' '}
+                              {oculto ? 'Oculto' : audio.estado || 'Disponible'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Sin audio</span>
+                        )}
                       </td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'inline-flex', gap: 8 }}>
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            onClick={() => setSelectedDetail(item)}
+                            onClick={() => setSelectedDetail(generacion)}
                           >
                             <Info size={14} />
                             Ver
                           </button>
+                          {audio && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handleDownload(audio)}
+                              disabled={oculto}
+                            >
+                              <Download size={14} />
+                              Descargar
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
-                            onClick={() => handleHide(item)}
+                            disabled={!audio || oculto || hidingId === audio?.id}
+                            onClick={() => handleHide(generacion)}
                           >
                             <EyeOff size={14} />
-                            Ocultar
+                            {oculto ? 'Oculto' : hidingId === audio?.id ? 'Ocultando...' : 'Ocultar'}
                           </button>
                         </div>
                       </td>
@@ -152,7 +236,7 @@ export default function HistoryTab({
         <div className="glass-card" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <strong style={{ fontSize: '0.96rem' }}>
-              Detalles del registro #{selectedDetail.id}
+              Detalles de la generación #{selectedDetail.id}
             </strong>
             <button
               type="button"
@@ -162,7 +246,16 @@ export default function HistoryTab({
               Cerrar
             </button>
           </div>
-          <pre className="json-block">{JSON.stringify(selectedDetail, null, 2)}</pre>
+          <pre className="json-block">
+            {JSON.stringify(
+              {
+                solicitud: selectedDetail.raw ?? selectedDetail,
+                audio: selectedDetail.audio?.raw ?? selectedDetail.audio,
+              },
+              null,
+              2
+            )}
+          </pre>
         </div>
       )}
     </div>

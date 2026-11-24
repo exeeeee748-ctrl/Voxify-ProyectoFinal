@@ -1,105 +1,125 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
 using backend_dotnet.Data;
-using backend_dotnet.Models;
+using backend_dotnet.DTOs.Audios;
+using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend_dotnet.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
 [Authorize]
+[Route("api/audios")]
 public class AudiosController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
+    private readonly ICurrentUserProvider _currentUser;
+    private readonly IWebHostEnvironment _environment;
 
-    public AudiosController(VoxifyDbContext context)
+    public AudiosController(
+        VoxifyDbContext context,
+        ICurrentUserProvider currentUser,
+        IWebHostEnvironment environment)
     {
         _context = context;
+        _currentUser = currentUser;
+        _environment = environment;
     }
 
-    // POST: api/Audios
-    [HttpPost]
-    public async Task<IActionResult> CrearAudio(Audio audio)
-    {
-        var solicitudExiste = await _context.SolicitudesGeneracion
-            .AnyAsync(s => s.Id == audio.SolicitudGeneracionId && s.Activo);
-
-        if (!solicitudExiste)
-            return BadRequest("La solicitud de generación no existe o está inactiva.");
-
-        _context.Audios.Add(audio);
-        await _context.SaveChangesAsync();
-
-        return CreatedAtAction(nameof(ObtenerPorId),
-            new { id = audio.Id }, audio);
-    }
-
-    // GET: api/Audios
-    [HttpGet]
-    public async Task<IActionResult> ObtenerTodos()
-    {
-        var audios = await _context.Audios
-            .Include(a => a.SolicitudGeneracion)
-            .Where(a => a.Activo)
-            .ToListAsync();
-
-        return Ok(audios);
-    }
-
-    // GET: api/Audios/5
+    // GET: api/audios/5
     [HttpGet("{id}")]
     public async Task<IActionResult> ObtenerPorId(int id)
     {
+        var usuario = await _currentUser.ObtenerAsync();
+
         var audio = await _context.Audios
-            .Include(a => a.SolicitudGeneracion)
-            .FirstOrDefaultAsync(a => a.Id == id && a.Activo);
+            .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
 
         if (audio == null)
             return NotFound("Audio no encontrado.");
 
-        return Ok(audio);
+        return Ok(ToDto(audio));
     }
 
-    // PUT: api/Audios/5
-    [HttpPut("{id}")]
-    public async Task<IActionResult> ActualizarAudio(int id, Audio datos)
+    // GET: api/audios/5/reproducir
+    [HttpGet("{id}/reproducir")]
+    public async Task<IActionResult> Reproducir(int id)
     {
+        var usuario = await _currentUser.ObtenerAsync();
+
         var audio = await _context.Audios
-            .FirstOrDefaultAsync(a => a.Id == id && a.Activo);
+            .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
 
         if (audio == null)
             return NotFound("Audio no encontrado.");
 
-        var solicitudExiste = await _context.SolicitudesGeneracion
-            .AnyAsync(s => s.Id == datos.SolicitudGeneracionId && s.Activo);
+        var ruta = ResolverRuta(audio.DireccionFisica);
+        if (!System.IO.File.Exists(ruta))
+            return NotFound("El archivo de audio no existe.");
 
-        if (!solicitudExiste)
-            return BadRequest("La solicitud no existe o está inactiva.");
-
-        audio.NombreArchivo = datos.NombreArchivo;
-        audio.RutaArchivo = datos.RutaArchivo;
-        audio.SolicitudGeneracionId = datos.SolicitudGeneracionId;
-
-        await _context.SaveChangesAsync();
-
-        return Ok(audio);
+        return PhysicalFile(ruta, ObtenerContentType(audio.Formato));
     }
 
-    // DELETE: api/Audios/5
+    // GET: api/audios/5/descargar
+    [HttpGet("{id}/descargar")]
+    public async Task<IActionResult> Descargar(int id)
+    {
+        var usuario = await _currentUser.ObtenerAsync();
+
+        var audio = await _context.Audios
+            .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
+
+        if (audio == null)
+            return NotFound("Audio no encontrado.");
+
+        var ruta = ResolverRuta(audio.DireccionFisica);
+        if (!System.IO.File.Exists(ruta))
+            return NotFound("El archivo de audio no existe.");
+
+        return PhysicalFile(ruta, ObtenerContentType(audio.Formato), audio.NombreArchivo);
+    }
+
+    // DELETE: api/audios/5
     [HttpDelete("{id}")]
-    public async Task<IActionResult> EliminarAudio(int id)
+    public async Task<IActionResult> Ocultar(int id)
     {
+        var usuario = await _currentUser.ObtenerAsync();
+
         var audio = await _context.Audios
-            .FirstOrDefaultAsync(a => a.Id == id && a.Activo);
+            .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
 
         if (audio == null)
             return NotFound("Audio no encontrado.");
 
-        audio.Activo = false;
-
+        audio.Estado = "Oculto";
         await _context.SaveChangesAsync();
 
-        return Ok("Audio eliminado lógicamente.");
+        return NoContent();
     }
+
+    private string ResolverRuta(string direccionFisica) =>
+        Path.IsPathRooted(direccionFisica)
+            ? direccionFisica
+            : Path.Combine(_environment.ContentRootPath, direccionFisica);
+
+    private static string ObtenerContentType(string formato) => formato.ToLowerInvariant() switch
+    {
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        _ => "audio/wav"
+    };
+
+    private static AudioResponseDto ToDto(Models.Audio a) => new()
+    {
+        IdAudio = a.IdAudio,
+        NombreArchivo = a.NombreArchivo,
+        Formato = a.Formato,
+        TamanoBytes = a.TamanoBytes,
+        FechaCreacion = a.FechaCreacion,
+        DuracionSegundos = a.DuracionSegundos,
+        Estado = a.Estado,
+        IdUsuario = a.IdUsuario,
+        IdVoz = a.IdVoz,
+        IdIdioma = a.IdIdioma
+    };
 }

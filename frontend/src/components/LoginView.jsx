@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
   AudioLines,
   CheckCircle2,
-  Eye,
   Globe2,
   Lock,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  UserCheck,
   Waves,
 } from 'lucide-react';
 import { AUTH_PROVIDERS } from '../config/voxifyConfig';
@@ -19,38 +19,83 @@ import VoiceWaveformCanvas from './VoiceWaveformCanvas';
 export default function LoginView({
   apiBaseUrl,
   onApiBaseUrlChange,
-  logoutNotice,
-  lastLogoutProbe,
-  onEnterDemoMode,
+  onDevLogin,
+  connecting,
+  notice,
 }) {
-  const [probeResult, setProbeResult] = useState(lastLogoutProbe || null);
-  const [probing, setProbing] = useState(false);
   const [editingApi, setEditingApi] = useState(false);
   const [apiDraft, setApiDraft] = useState(apiBaseUrl);
+  const [providers, setProviders] = useState(
+    () => AUTH_PROVIDERS.map((provider) => ({ ...provider, configured: null }))
+  );
+  const [devLoginEnabled, setDevLoginEnabled] = useState(false);
+  const [loadingProviders, setLoadingProviders] = useState(true);
+  const [providerError, setProviderError] = useState('');
+  const [authError, setAuthError] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('authError') || '';
+  });
 
-  const handleProviderLogin = (provider) => {
-    const target = buildProviderLoginUrl(provider.loginPath, apiBaseUrl);
-    window.location.href = target;
-  };
+  useEffect(() => {
+    let active = true;
 
-  const runUnauthenticatedProbe = async (path) => {
-    setProbing(true);
-    const res = await apiRequest(path, {
-      method: 'GET',
-      includeCredentials: true,
-      baseUrl: apiBaseUrl,
-    });
-    setProbeResult({ path, ...res });
-    setProbing(false);
-  };
+    (async () => {
+      const res = await apiRequest('/api/auth/providers', {
+        baseUrl: apiBaseUrl,
+      });
 
-  const saveApiUrl = (e) => {
-    e.preventDefault();
+      if (!active) return;
+
+      if (res.ok && res.data) {
+        const remoteProviders = Array.isArray(res.data.providers)
+          ? res.data.providers
+          : [];
+
+        setProviders(
+          AUTH_PROVIDERS.map((provider) => {
+            const remote = remoteProviders.find((item) => item.id === provider.id);
+            return {
+              ...provider,
+              configured: Boolean(remote?.configured),
+              redirectUri: remote?.redirectUri,
+            };
+          })
+        );
+        setDevLoginEnabled(Boolean(res.data.devLoginEnabled));
+        setProviderError('');
+      } else {
+        setProviderError(
+          'No se pudo consultar el estado de los proveedores OAuth. Revisa que el backend esté encendido.'
+        );
+      }
+
+      setLoadingProviders(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [apiBaseUrl]);
+
+  const saveApiUrl = (event) => {
+    event.preventDefault();
     onApiBaseUrlChange(apiDraft);
     setEditingApi(false);
   };
 
-  const displayProbe = probeResult || lastLogoutProbe;
+  const handleProviderLogin = (provider) => {
+    if (provider.configured === false) return;
+
+    const target = buildProviderLoginUrl(
+      provider.loginPath,
+      apiBaseUrl,
+      `${window.location.origin}/estudio`
+    );
+
+    window.location.href = target;
+  };
+
+  const visibleNotice = notice || authError;
 
   return (
     <main className="login-page">
@@ -60,7 +105,7 @@ export default function LoginView({
 
         <div className="hero-eyebrow">
           <Sparkles size={14} />
-          <span>Motor Kitten TTS 2 · Síntesis Neural Multilingüe</span>
+          <span>Motor Kitten TTS 2 · SSO TikTok, Microsoft y Twitch</span>
         </div>
 
         <h1 className="hero-heading">
@@ -69,8 +114,8 @@ export default function LoginView({
 
         <p className="hero-lead">
           Estudio web conectado al backend <span className="mono">.NET + PostgreSQL</span> de
-          Voxify. Inicia sesión con un proveedor externo para gestionar idiomas, generar audios,
-          explorar tu historial y consultar reportes autorizados.
+          Voxify. Inicia sesión con TikTok, Microsoft o Twitch gracias al flujo OAuth 2.0 / OIDC
+          unificado.
         </p>
 
         <div className="wave-showcase">
@@ -88,25 +133,24 @@ export default function LoginView({
 
         <div className="feature-pills">
           <div className="feature-pill">
-            <Globe2 size={18} color="#22d3ee" />
-            <div className="feature-pill-title">20+ Idiomas</div>
+            <Waves size={18} color="#22d3ee" />
+            <div className="feature-pill-title">SSO Unificado</div>
             <p className="feature-pill-text">
-              Catálogo conectado a <span className="mono">/api/Idiomas</span> con pronunciación
-              neural.
+              TikTok, Microsoft y Twitch convergen en un único usuario interno de Voxify.
             </p>
           </div>
           <div className="feature-pill">
-            <Waves size={18} color="#818cf8" />
-            <div className="feature-pill-title">Voces y Clonación</div>
+            <Globe2 size={18} color="#818cf8" />
+            <div className="feature-pill-title">Catálogo de Idiomas</div>
             <p className="feature-pill-text">
-              Voces predeterminadas y clonadas listas para síntesis con Kitten TTS 2.
+              Idiomas y voces cargados desde <span className="mono">/api/idiomas</span> y PostgreSQL.
             </p>
           </div>
           <div className="feature-pill">
             <ShieldCheck size={18} color="#c084fc" />
-            <div className="feature-pill-title">Acceso Protegido</div>
+            <div className="feature-pill-title">Sesión Segura</div>
             <p className="feature-pill-text">
-              Sesiones por Cookie HTTP-Only y reportes validados en el backend.
+              Cookie HttpOnly de Voxify, validación de <span className="mono">state</span> y PKCE.
             </p>
           </div>
         </div>
@@ -118,7 +162,7 @@ export default function LoginView({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <span className="badge badge-violet">
               <Lock size={12} />
-              Acceso OAuth 2.0
+              OAuth 2.0 / OIDC
             </span>
 
             {!editingApi ? (
@@ -143,7 +187,7 @@ export default function LoginView({
                 className="input mono"
                 style={{ padding: '8px 10px', fontSize: '0.8rem' }}
                 value={apiDraft}
-                onChange={(e) => setApiDraft(e.target.value)}
+                onChange={(event) => setApiDraft(event.target.value)}
                 placeholder="http://localhost:5173"
               />
               <button type="submit" className="btn btn-primary btn-sm">
@@ -154,123 +198,156 @@ export default function LoginView({
 
           <h2 style={{ marginTop: 14 }}>Inicia sesión en Voxify</h2>
           <p>
-            Elige cualquiera de los proveedores configurados en el backend para autenticarte y
-            volver automáticamente a la aplicación.
+            Elige un proveedor configurado. La sesión de Voxify se crea en el backend y nunca se
+            expone el <span className="mono">client_secret</span> al navegador.
           </p>
         </div>
 
-        {logoutNotice && (
+        {visibleNotice && (
           <div
             style={{
               padding: '12px 14px',
               borderRadius: 12,
-              background: 'rgba(52, 211, 153, 0.12)',
-              border: '1px solid rgba(52, 211, 153, 0.35)',
+              background: 'rgba(251, 191, 36, 0.12)',
+              border: '1px solid rgba(251, 191, 36, 0.35)',
               display: 'flex',
               alignItems: 'center',
               gap: 10,
               fontSize: '0.84rem',
-              color: '#a7f3d0',
+              color: '#fde68a',
             }}
           >
-            <CheckCircle2 size={18} style={{ flexShrink: 0 }} />
-            <span>{logoutNotice}</span>
+            <ShieldAlert size={18} style={{ flexShrink: 0 }} />
+            <span>{visibleNotice}</span>
           </div>
         )}
 
         <div className="provider-stack">
-          {AUTH_PROVIDERS.map((provider) => (
-            <button
-              key={provider.id}
-              type="button"
-              className={`provider-btn ${provider.accentClass}`}
-              onClick={() => handleProviderLogin(provider)}
-            >
-              <div className="provider-left">
-                <div className="provider-icon-box">
-                  <ProviderIcon providerId={provider.id} size={22} />
+          {providers.map((provider) => {
+            const isUnconfigured = provider.configured === false;
+            return (
+              <button
+                key={provider.id}
+                type="button"
+                className={`provider-btn ${provider.accentClass} ${
+                  isUnconfigured ? 'provider-unconfigured' : ''
+                }`}
+                onClick={() => handleProviderLogin(provider)}
+                disabled={isUnconfigured || loadingProviders}
+              >
+                <div className="provider-left">
+                  <div className="provider-icon-box">
+                    <ProviderIcon providerId={provider.id} size={22} />
+                  </div>
+                  <div>
+                    <span className="provider-name">Continuar con {provider.name}</span>
+                    <span className="provider-desc">{provider.description}</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="provider-name">Continuar con {provider.name}</span>
-                  <span className="provider-desc">{provider.description}</span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {provider.configured === false ? (
+                    <span className="badge badge-rose">No configurado</span>
+                  ) : provider.configured === true ? (
+                    <span className="badge badge-emerald">Listo</span>
+                  ) : null}
+                  <ArrowRight size={18} color="#94a3b8" />
                 </div>
-              </div>
-              <ArrowRight size={18} color="#94a3b8" />
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Unauthenticated protection verifier (Punto 1) */}
+        {providerError && (
+          <div
+            style={{
+              fontSize: '0.8rem',
+              color: '#fca5a5',
+              lineHeight: 1.5,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'rgba(251, 113, 133, 0.08)',
+              border: '1px solid rgba(251, 113, 133, 0.25)',
+            }}
+          >
+            {providerError}
+          </div>
+        )}
+
+        {devLoginEnabled && (
+          <>
+            <div className="divider-line">o acceso de desarrollo</div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onDevLogin}
+              disabled={connecting}
+            >
+              <UserCheck size={16} />
+              {connecting ? 'Conectando...' : 'Entrar como usuario de desarrollo'}
+            </button>
+          </>
+        )}
+
         <div className="probe-box">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <span style={{ fontSize: '0.8rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <ShieldAlert size={15} color="#fbbf24" />
-              Verificar protección sin sesión
+              <ShieldCheck size={15} color="#34d399" />
+              Condiciones de seguridad
             </span>
             <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              Punto 1
+              state + PKCE
             </span>
           </div>
-          <p style={{ margin: 0, fontSize: '0.77rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-            Comprueba que sin iniciar sesión (o tras hacer logout) el backend rechaza los recursos
-            protegidos con <span className="mono">401 Unauthorized</span>.
+          <p style={{ margin: 0, fontSize: '0.77rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            Los callbacks se procesan en el backend, el correo solo se vincula si el proveedor lo
+            garantiza y cada identidad externa queda asociada a un único usuario de Voxify.
           </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={probing}
-              onClick={() => runUnauthenticatedProbe('/api/auth/me')}
-            >
-              Probar /api/auth/me
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={probing}
-              onClick={() => runUnauthenticatedProbe('/api/Idiomas')}
-            >
-              Probar /api/Idiomas
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem' }}>
+            <CheckCircle2 size={14} color="#34d399" />
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Dominio de redirección configurable por proveedor.
+            </span>
           </div>
-
-          {displayProbe && (
-            <div className="probe-result">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                <span className="mono" style={{ color: 'var(--text-secondary)' }}>
-                  GET {displayProbe.path}
-                </span>
-                <span
-                  className={`badge ${
-                    displayProbe.status === 401 || displayProbe.status === 403
-                      ? 'badge-emerald'
-                      : displayProbe.ok
-                        ? 'badge-amber'
-                        : 'badge-rose'
-                  }`}
-                >
-                  {displayProbe.status === 401
-                    ? '401 Bloqueado ✓'
-                    : displayProbe.status === 0
-                      ? 'Backend apagado'
-                      : `HTTP ${displayProbe.status}`}
-                </span>
-              </div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.76rem', lineHeight: 1.45 }}>
-                {displayProbe.status === 401
-                  ? 'Correcto: el backend rechazó el acceso sin sesión activa.'
-                  : displayProbe.data?.error || displayProbe.data?.mensaje || 'Respuesta recibida del servidor.'}
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="divider-line">o explorar diseño</div>
-
-        <button type="button" className="btn btn-ghost" onClick={onEnterDemoMode}>
-          <Eye size={16} />
-          Abrir vista previa del estudio (Modo Demo)
-        </button>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 10,
+            fontSize: '0.76rem',
+            color: 'var(--text-muted)',
+          }}
+        >
+          <a
+            href="/legal.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+          >
+            Centro Legal
+          </a>
+          <span>·</span>
+          <a
+            href="/terms.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+          >
+            Términos de Servicio
+          </a>
+          <span>·</span>
+          <a
+            href="/privacy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+          >
+            Política de Privacidad
+          </a>
+        </div>
       </section>
     </main>
   );

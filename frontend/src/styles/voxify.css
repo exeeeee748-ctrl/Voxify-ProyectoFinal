@@ -287,6 +287,52 @@ pre,
   box-shadow: 0 12px 32px -12px rgba(56, 189, 248, 0.5);
 }
 
+.provider-btn.provider-local {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), rgba(15, 23, 42, 0.92));
+  border-color: rgba(34, 211, 238, 0.38);
+}
+
+.provider-btn.provider-local:hover {
+  border-color: rgba(34, 211, 238, 0.78);
+  box-shadow: 0 12px 32px -12px rgba(34, 211, 238, 0.5);
+}
+
+.provider-btn.provider-tiktok {
+  background:
+    linear-gradient(135deg, rgba(37, 244, 238, 0.16), rgba(254, 44, 85, 0.12) 55%, rgba(15, 23, 42, 0.94));
+  border-color: rgba(37, 244, 238, 0.38);
+}
+
+.provider-btn.provider-tiktok:hover {
+  border-color: rgba(254, 44, 85, 0.7);
+  box-shadow: 0 12px 32px -12px rgba(254, 44, 85, 0.55);
+}
+
+.provider-btn.provider-unconfigured {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.provider-btn.provider-unconfigured:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.provider-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
+}
+
+.audio-inline {
+  width: 230px;
+  max-width: 100%;
+  height: 34px;
+  accent-color: #22d3ee;
+  color-scheme: dark;
+}
+
 .provider-left {
   display: flex;
   align-items: center;
@@ -615,6 +661,14 @@ pre,
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
 }
 
 .user-meta {
