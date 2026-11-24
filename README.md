@@ -190,3 +190,26 @@ curl -i http://localhost:5173/api/Reportes/produccion-audios
 # Detener contenedores conservando el volumen de PostgreSQL
 docker compose -f docker-compose.dev.yml down
 ```
+
+
+## Frontend integrado al mismo Compose (Punto 5)
+
+El mismo archivo `docker-compose.dev.yml` incluye el servicio **`frontend`** construido desde `frontend/Dockerfile` y servido mediante **Nginx** (puerto `${FRONTEND_PORT:-3000}:80`), conectado a la misma red `voxify_dev_net`.
+
+### Levantar base de datos, backend y frontend en un solo comando
+
+```bash
+cp .env.example .env
+docker compose -f docker-compose.dev.yml up --build -d
+```
+
+- **Frontend web (Nginx):** `http://localhost:3000`
+- **Backend API (.NET):** `http://localhost:5173` (configurado para el navegador mediante `VITE_API_URL=http://localhost:5173`)
+- **URL de retorno y CORS:** `FRONTEND_URL=http://localhost:3000` y `CORS_ORIGINS=http://localhost:3000,http://localhost:5174,http://localhost:8080`
+- **Callbacks OAuth:** `http://localhost:5173/auth/tiktok/callback`, `http://localhost:5173/auth/twitch/callback`, `http://localhost:5173/auth/microsoft/callback`
+
+### Verificación desde el navegador
+
+1. Abrir `http://localhost:3000` (redirige a `/login` mostrando los proveedores OAuth configurados: TikTok, Microsoft y Twitch).
+2. Probar acceso sin sesión → el backend rechaza con `401 Unauthorized`.
+3. Iniciar sesión con un proveedor real, verificar la identidad autenticada, consultar `/reportes` (`200 OK` autorizado / `403` sin permisos) y cerrar sesión comprobando el bloqueo posterior.

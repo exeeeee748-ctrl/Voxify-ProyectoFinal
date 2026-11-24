@@ -34,22 +34,52 @@ services:
       DISABLE_HTTPS_REDIRECTION: "true"
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-voxify};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-voxify_dev_pass}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-voxify_dev_secret_key_cambiar_en_produccion}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5174,http://localhost:8080}
+      COOKIE_SAME_SITE: ${COOKIE_SAME_SITE:-Lax}
+      COOKIE_SECURE: ${COOKIE_SECURE:-SameAsRequest}
+      ALLOW_DEV_USER: ${ALLOW_DEV_USER:-false}
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+      TIKTOK_REDIRECT_URI: ${TIKTOK_REDIRECT_URI:-http://localhost:5173/auth/tiktok/callback}
       TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
       TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-http://localhost:5173/auth/twitch/callback}
       MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-http://localhost:5173/auth/microsoft/callback}
       REPORT_ALLOWED_PROVIDERS: ${REPORT_ALLOWED_PROVIDERS:-Twitch}
       REPORT_ALLOWED_USERS: ${REPORT_ALLOWED_USERS:-}
     ports:
       - "${BACKEND_PORT:-5173}:8080"
+    volumes:
+      - voxify_audios:/app/Storage
+    networks:
+      - voxify_dev_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5173}
+    container_name: voxify-frontend-dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
     networks:
       - voxify_dev_net
 
 volumes:
   voxify_pgdata:
     name: voxify_pgdata
+  voxify_audios:
+    name: voxify_audios
 
 networks:
   voxify_dev_net:
