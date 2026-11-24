@@ -1,5 +1,7 @@
 using backend_dotnet.Data;
+using backend_dotnet.Security;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -31,14 +33,35 @@ if (File.Exists(envPath))
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddOpenApi();
+builder.Services.AddControllers();
+
+var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:3000";
+var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ORIGINS");
+var allowedOrigins = (string.IsNullOrWhiteSpace(corsOriginsRaw)
+        ? new[] { frontendUrl, "http://localhost:3000", "http://localhost:5174", "http://localhost:8080" }
+        : corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("VoxifyFrontend", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Falta ConnectionStrings__DefaultConnection en .env o configuración.");
+    ?? Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "Falta ConnectionStrings__DefaultConnection en .env o configuración.");
 
 builder.Services.AddDbContext<VoxifyDbContext>(options =>
     options.UseNpgsql(connectionString));
-
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
 
 builder.Services.Configure<TtsOptions>(
     builder.Configuration.GetSection(TtsOptions.SectionName));
@@ -55,6 +78,19 @@ builder.Services.AddHttpClient<ITtsService, TtsService>((serviceProvider, client
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(
         options.TimeoutSeconds > 0 ? options.TimeoutSeconds : 120);
+});
+
+builder.Services.AddTransient<IClaimsTransformation, VoxifyClaimsTransformation>();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ReporteProduccionAudios", policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireRole(VoxifyClaimsTransformation.RoleAnalistaReportes)
+            .RequireClaim(
+                VoxifyClaimsTransformation.ClaimPermiso,
+                VoxifyClaimsTransformation.PermisoLeerReporteProduccion
+            ));
 });
 
 // --------------------------------------------------------------------------
@@ -101,8 +137,6 @@ builder.Services
     })
     .AddCookie();
 
-builder.Services.AddAuthorization();
-
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -111,7 +145,15 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.UseHttpsRedirection();
+if (!string.Equals(
+        Environment.GetEnvironmentVariable("DISABLE_HTTPS_REDIRECTION"),
+        "true",
+        StringComparison.OrdinalIgnoreCase))
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("VoxifyFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -18,11 +18,11 @@ public class AuthController : ControllerBase
     /*
     [HttpGet("login/twitch")]
     [AllowAnonymous]
-    public async Task<IActionResult> LoginTwitch()
+    public IActionResult LoginTwitch([FromQuery] string? returnUrl = null)
     {
         var properties = new AuthenticationProperties
         {
-            RedirectUri = "/api/auth/me"
+            RedirectUri = ResolveReturnUrl(returnUrl)
         };
 
         return Challenge(properties, "Twitch");
@@ -30,11 +30,11 @@ public class AuthController : ControllerBase
 
     [HttpGet("login/microsoft")]
     [AllowAnonymous]
-    public async Task<IActionResult> LoginMicrosoft()
+    public IActionResult LoginMicrosoft([FromQuery] string? returnUrl = null)
     {
         var properties = new AuthenticationProperties
         {
-            RedirectUri = "/api/auth/me"
+            RedirectUri = ResolveReturnUrl(returnUrl)
         };
 
         return Challenge(properties, "Microsoft");
@@ -42,9 +42,39 @@ public class AuthController : ControllerBase
 
     [HttpGet("login")]
     [AllowAnonymous]
-    public IActionResult Login()
+    public IActionResult Login([FromQuery] string? returnUrl = null)
     {
-        return Redirect("/api/auth/login/twitch");
+        var target = string.IsNullOrWhiteSpace(returnUrl)
+            ? "/api/auth/login/twitch"
+            : $"/api/auth/login/twitch?returnUrl={Uri.EscapeDataString(returnUrl)}";
+        return Redirect(target);
+    }
+
+    private static string ResolveReturnUrl(string? returnUrl)
+    {
+        var defaultFrontend = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:3000";
+        var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ORIGINS");
+        var allowedOrigins = (string.IsNullOrWhiteSpace(corsOriginsRaw)
+                ? new[] { defaultFrontend, "http://localhost:3000", "http://localhost:5174", "http://localhost:8080" }
+                : corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Select(o => o.TrimEnd('/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            if (returnUrl.StartsWith('/') && !returnUrl.StartsWith("//"))
+                return returnUrl;
+
+            if (Uri.TryCreate(returnUrl, UriKind.Absolute, out var uri))
+            {
+                var origin = $"{uri.Scheme}://{uri.Authority}";
+                if (allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                    return returnUrl;
+            }
+        }
+
+        return defaultFrontend;
     }
     */
 
@@ -52,13 +82,32 @@ public class AuthController : ControllerBase
     [Authorize]
     public IActionResult Me()
     {
+        var provider = User.Identities
+            .Select(identity => identity.AuthenticationType)
+            .FirstOrDefault(type => type is "Twitch" or "Microsoft");
+
+        var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role)
+            .Select(c => c.Value)
+            .Distinct()
+            .ToArray();
+
+        var permisos = User.FindAll(backend_dotnet.Security.VoxifyClaimsTransformation.ClaimPermiso)
+            .Select(c => c.Value)
+            .Distinct()
+            .ToArray();
+
         return Ok(new
         {
             Autenticado = User.Identity?.IsAuthenticated,
-            Nombre = User.Identity?.Name,
+            Nombre = User.Identity?.Name
+                ?? User.FindFirst("name")?.Value
+                ?? User.FindFirst("preferred_username")?.Value,
+            Proveedor = provider,
             Identificador = User.FindFirst(
                 System.Security.Claims.ClaimTypes.NameIdentifier
-            )?.Value
+            )?.Value,
+            Rol = roles.FirstOrDefault() ?? "Usuario",
+            Permisos = permisos
         });
     }
 
