@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: voxify-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-voxify}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voxify_dev_pass}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - voxify_pgdata:/var/lib/postgresql/data
+    networks:
+      - voxify_dev_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-voxify}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend-dotnet
+      dockerfile: Dockerfile.EzequielGallardo
+    container_name: voxify-backend-dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: http://+:8080
+      DISABLE_HTTPS_REDIRECTION: "true"
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-voxify};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-voxify_dev_pass}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      REPORT_ALLOWED_PROVIDERS: ${REPORT_ALLOWED_PROVIDERS:-Twitch}
+      REPORT_ALLOWED_USERS: ${REPORT_ALLOWED_USERS:-}
+    ports:
+      - "${BACKEND_PORT:-5173}:8080"
+    networks:
+      - voxify_dev_net
+
+volumes:
+  voxify_pgdata:
+    name: voxify_pgdata
+
+networks:
+  voxify_dev_net:
+    name: voxify_dev_net
+    driver: bridge
