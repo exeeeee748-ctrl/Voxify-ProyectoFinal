@@ -1,6 +1,7 @@
 using backend_dotnet.Data;
 using backend_dotnet.DTOs.Clonaciones;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MuestraVoz = backend_dotnet.Models.Voces.MuestraVoz;
@@ -9,20 +10,21 @@ using SolicitudClonacion = backend_dotnet.Models.Voces.SolicitudClonacion;
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/clonaciones")]
 public class ClonacionesController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
     private readonly IWebHostEnvironment _environment;
 
     public ClonacionesController(
         VoxifyDbContext context,
-        IDevUserProvider devUser,
+        ICurrentUserProvider currentUser,
         IWebHostEnvironment environment)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
         _environment = environment;
     }
 
@@ -33,7 +35,7 @@ public class ClonacionesController : ControllerBase
         IFormFile? archivo,
         CancellationToken cancellationToken)
     {
-        var usuario = await _devUser.ObtenerAsync(cancellationToken);
+        var usuario = await _currentUser.ObtenerAsync(cancellationToken);
 
         var solicitud = new SolicitudClonacion
         {
@@ -87,7 +89,7 @@ public class ClonacionesController : ControllerBase
     [HttpGet("/api/usuarios/me/clonaciones")]
     public async Task<IActionResult> MisClonaciones()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var solicitudes = await _context.SolicitudesClonacion
             .Where(s => s.IdUsuario == usuario.IdUsuario)
@@ -103,7 +105,7 @@ public class ClonacionesController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> ObtenerPorId(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var solicitud = await _context.SolicitudesClonacion
             .Include(s => s.Muestra)

@@ -52,7 +52,7 @@ export default function ReportsTab({ user, apiBaseUrl, showToast }) {
     if (res.ok) {
       showToast(`Reporte consultado correctamente (HTTP ${res.status}).`);
     } else if (res.status === 401) {
-      showToast('El reporte requiere una sesión con rol AnalistaReportes (OAuth diferido).', 'error');
+      showToast('El reporte requiere una sesión con rol AnalistaReportes.', 'error');
     } else if (res.status === 403) {
       showToast('Acceso denegado: falta el permiso reportes:produccion:leer.', 'error');
     } else {
@@ -75,8 +75,9 @@ export default function ReportsTab({ user, apiBaseUrl, showToast }) {
           <h2 className="section-title">Reportes Autorizados</h2>
           <p className="section-subtitle">
             La autorización se valida en el backend .NET mediante la política{' '}
-            <span className="mono">ReporteProduccionAudios</span>. Mientras OAuth está diferido, la
-            consulta devolverá <span className="mono">401</span>.
+            <span className="mono">ReporteProduccionAudios</span>. Si tu proveedor no tiene el rol
+            <span className="mono"> AnalistaReportes</span>, la consulta devolverá{' '}
+            <span className="mono">401</span> o <span className="mono">403</span>.
           </p>
         </div>
 
@@ -230,7 +231,7 @@ export default function ReportsTab({ user, apiBaseUrl, showToast }) {
                       {result.ok
                         ? 'OK · Autorizado'
                         : result.status === 401
-                          ? 'Unauthorized · OAuth diferido'
+                          ? 'Unauthorized · Falta rol o sesión'
                           : result.status === 403
                             ? 'Forbidden · Sin permisos'
                             : ''}
@@ -257,7 +258,7 @@ export default function ReportsTab({ user, apiBaseUrl, showToast }) {
                     }}
                   >
                     {result.status === 401
-                      ? 'El endpoint está protegido por la política ReporteProduccionAudios. Al habilitar OAuth, un usuario con rol AnalistaReportes podrá consultarlo.'
+                      ? 'El endpoint está protegido por la política ReporteProduccionAudios. Inicia sesión con un proveedor que tenga el rol AnalistaReportes (Twitch por defecto) para consultarlo.'
                       : result.status === 403
                         ? 'El usuario no tiene el permiso reportes:produccion:leer.'
                         : extractErrorMessage(result, 'No se pudo consultar el reporte.')}

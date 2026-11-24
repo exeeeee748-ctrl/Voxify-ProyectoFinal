@@ -6,11 +6,19 @@ public class Usuario
 
     public string Nombre { get; set; } = string.Empty;
 
-    public string Correo { get; set; } = string.Empty;
+    // TikTok puede no devolver correo; por eso el correo es opcional.
+    public string? Correo { get; set; }
+
+    public string? AvatarUrl { get; set; }
+
+    // Reservado para futuras cuentas locales; las cuentas OAuth no lo usan.
+    public string? PasswordHash { get; set; }
 
     public EstadoUsuario Estado { get; set; } = EstadoUsuario.Activo;
 
     public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
+
+    public DateTime? FechaActualizacion { get; set; }
 
     // Relaciones
     public ICollection<CuentaExterna> CuentasExternas { get; set; }

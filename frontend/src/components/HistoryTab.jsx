@@ -7,7 +7,12 @@ import {
   Info,
   RefreshCw,
 } from 'lucide-react';
-import { apiRequest, extractErrorMessage, getAudioUrl } from '../services/apiClient';
+import {
+  apiRequest,
+  downloadAudioFile,
+  extractErrorMessage,
+  getAudioUrl,
+} from '../services/apiClient';
 import { formatBytes, formatDate, formatDuration, truncate } from '../utils/format';
 
 function statusBadge(status) {
@@ -32,6 +37,15 @@ export default function HistoryTab({ apiBaseUrl, generaciones, onReload, showToa
     setLoading(true);
     await onReload();
     setLoading(false);
+  };
+
+  const handleDownload = async (audio) => {
+    try {
+      await downloadAudioFile(audio.id, audio.nombreArchivo || 'audio', apiBaseUrl);
+      showToast(`Descargando ${audio.nombreArchivo || 'audio'}...`);
+    } catch (error) {
+      showToast(error.message || 'No se pudo descargar el audio.', 'error');
+    }
   };
 
   const handleHide = async (generacion) => {
@@ -165,6 +179,7 @@ export default function HistoryTab({ apiBaseUrl, generaciones, onReload, showToa
                               className="audio-inline"
                               controls
                               preload="none"
+                              crossOrigin="use-credentials"
                               src={getAudioUrl(audio.id, 'reproducir', apiBaseUrl)}
                             />
                             <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
@@ -187,16 +202,15 @@ export default function HistoryTab({ apiBaseUrl, generaciones, onReload, showToa
                             Ver
                           </button>
                           {audio && (
-                            <a
+                            <button
+                              type="button"
                               className="btn btn-ghost btn-sm"
-                              href={getAudioUrl(audio.id, 'descargar', apiBaseUrl)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ textDecoration: 'none' }}
+                              onClick={() => handleDownload(audio)}
+                              disabled={oculto}
                             >
                               <Download size={14} />
                               Descargar
-                            </a>
+                            </button>
                           )}
                           <button
                             type="button"

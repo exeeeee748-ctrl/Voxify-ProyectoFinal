@@ -123,6 +123,23 @@ namespace backend_dotnet.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdCuentaExterna"));
 
+                    b.Property<string>("AccessToken")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("CorreoProveedor")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime?>("ExpiraEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FechaUltimoAcceso")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("FechaVinculacion")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("IdUsuario")
                         .HasColumnType("integer");
 
@@ -135,6 +152,10 @@ namespace backend_dotnet.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("RefreshToken")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.HasKey("IdCuentaExterna");
 
@@ -290,13 +311,19 @@ namespace backend_dotnet.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdUsuario"));
 
+                    b.Property<string>("AvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("Correo")
-                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
                     b.Property<int>("Estado")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("FechaActualizacion")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("FechaRegistro")
                         .HasColumnType("timestamp with time zone");
@@ -305,6 +332,10 @@ namespace backend_dotnet.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PasswordHash")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.HasKey("IdUsuario");
 

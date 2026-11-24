@@ -2,6 +2,19 @@ import { getApiBaseUrl } from '../config/voxifyConfig';
 
 const VOICE_PALETTE = ['#22d3ee', '#818cf8', '#c084fc', '#34d399', '#fbbf24', '#f472b6'];
 
+const PROVIDER_LABELS = {
+  development: 'Desarrollo local',
+  tiktok: 'TikTok',
+  microsoft: 'Microsoft',
+  twitch: 'Twitch',
+};
+
+function providerLabel(value) {
+  if (!value) return 'Voxify';
+  const key = String(value).toLowerCase();
+  return PROVIDER_LABELS[key] || value;
+}
+
 async function parseResponse(response, startedAt) {
   const elapsedMs = Math.round(performance.now() - startedAt);
   const contentType = response.headers.get('content-type') || '';
@@ -106,6 +119,26 @@ export function getAudioUrl(idAudio, action = 'reproducir', baseUrl = getApiBase
   return buildUrl(`/api/audios/${idAudio}/${action}`, baseUrl);
 }
 
+export async function downloadAudioFile(idAudio, filename, baseUrl = getApiBaseUrl()) {
+  const response = await fetch(getAudioUrl(idAudio, 'descargar', baseUrl), {
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar el audio (HTTP ${response.status}).`);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename || 'audio';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function extractErrorMessage(result, fallback = 'Ocurrió un error inesperado.') {
   const data = result?.data;
   if (!data) return fallback;
@@ -131,10 +164,12 @@ export function normalizeUser(raw) {
       correo: raw.correo ?? raw.Correo ?? '',
       estado: raw.estado ?? raw.Estado ?? 'Activo',
       idUsuario,
-      proveedor: 'Desarrollo local',
+      proveedor: providerLabel(raw.proveedor ?? raw.Proveedor ?? 'Voxify'),
+      proveedores: raw.proveedores ?? raw.Proveedores ?? [],
+      avatarUrl: raw.avatarUrl ?? raw.AvatarUrl ?? null,
       identificador: `#${idUsuario}`,
-      rol: 'Usuario',
-      permisos: [],
+      rol: raw.rol ?? raw.Rol ?? 'Usuario',
+      permisos: raw.permisos ?? raw.Permisos ?? [],
       raw,
     };
   }
@@ -147,7 +182,9 @@ export function normalizeUser(raw) {
     nombre: raw.nombre ?? raw.Nombre ?? 'Usuario Voxify',
     correo: raw.correo ?? raw.Correo ?? '',
     estado: raw.estado ?? raw.Estado ?? 'Activo',
-    proveedor: raw.proveedor ?? raw.Proveedor ?? 'Externo',
+    proveedor: providerLabel(raw.proveedor ?? raw.Proveedor ?? 'Externo'),
+    proveedores: raw.proveedores ?? raw.Proveedores ?? [],
+    avatarUrl: raw.avatarUrl ?? raw.AvatarUrl ?? null,
     identificador: raw.identificador ?? raw.Identificador ?? '—',
     rol: raw.rol ?? raw.Rol ?? 'Usuario',
     permisos: raw.permisos ?? raw.Permisos ?? [],
@@ -267,8 +304,8 @@ export function normalizeClonacion(raw) {
   };
 }
 
-export function buildProviderLoginUrl(loginPath, baseUrl = getApiBaseUrl()) {
+export function buildProviderLoginUrl(loginPath, baseUrl = getApiBaseUrl(), returnUrl) {
   const cleanBase = baseUrl.replace(/\/$/, '');
-  const returnUrl = window.location.origin;
-  return `${cleanBase}${loginPath}?returnUrl=${encodeURIComponent(returnUrl)}`;
+  const target = returnUrl || `${window.location.origin}/estudio`;
+  return `${cleanBase}${loginPath}?returnUrl=${encodeURIComponent(target)}`;
 }

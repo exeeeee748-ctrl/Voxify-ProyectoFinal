@@ -6,7 +6,7 @@ public class UsuarioResponseDto
 
     public string Nombre { get; set; } = string.Empty;
 
-    public string Correo { get; set; } = string.Empty;
+    public string? Correo { get; set; }
 
     public string Estado { get; set; } = string.Empty;
 }

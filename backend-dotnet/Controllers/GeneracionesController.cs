@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
@@ -13,11 +14,12 @@ using backend_dotnet.Services;
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/generaciones")]
 public class GeneracionesController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
     private readonly ITtsService _ttsService;
     private readonly TtsOptions _ttsOptions;
     private readonly IWebHostEnvironment _environment;
@@ -25,14 +27,14 @@ public class GeneracionesController : ControllerBase
 
     public GeneracionesController(
         VoxifyDbContext context,
-        IDevUserProvider devUser,
+        ICurrentUserProvider currentUser,
         ITtsService ttsService,
         IOptions<TtsOptions> ttsOptions,
         IWebHostEnvironment environment,
         ILogger<GeneracionesController> logger)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
         _ttsService = ttsService;
         _ttsOptions = ttsOptions.Value;
         _environment = environment;
@@ -43,7 +45,7 @@ public class GeneracionesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Crear(SolicitudGeneracionCreateDto dto)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var voz = await _context.Voces.FindAsync(dto.IdVoz);
         if (voz == null)
@@ -77,7 +79,7 @@ public class GeneracionesController : ControllerBase
     [HttpGet("/api/usuarios/me/generaciones")]
     public async Task<IActionResult> MisGeneraciones()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var solicitudes = await _context.SolicitudesGeneracion
             .Where(s => s.IdUsuario == usuario.IdUsuario)
@@ -93,7 +95,7 @@ public class GeneracionesController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> ObtenerPorId(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var solicitud = await _context.SolicitudesGeneracion
             .Include(s => s.Voz)
@@ -114,7 +116,7 @@ public class GeneracionesController : ControllerBase
         SintetizarSolicitudRequest? datos,
         CancellationToken cancellationToken)
     {
-        var usuario = await _devUser.ObtenerAsync(cancellationToken);
+        var usuario = await _currentUser.ObtenerAsync(cancellationToken);
 
         var solicitud = await _context.SolicitudesGeneracion
             .Include(s => s.Idioma)

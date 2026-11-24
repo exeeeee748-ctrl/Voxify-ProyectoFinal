@@ -1,7 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, KeyRound, Mail, Play, Save, Server, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
-import { API_ENDPOINTS } from '../config/voxifyConfig';
-import { apiRequest, extractErrorMessage, normalizeUser } from '../services/apiClient';
+import {
+  CheckCircle2,
+  KeyRound,
+  Link2,
+  Mail,
+  Play,
+  Save,
+  Server,
+  ShieldCheck,
+  UserCheck,
+  XCircle,
+} from 'lucide-react';
+import { API_ENDPOINTS, AUTH_PROVIDERS } from '../config/voxifyConfig';
+import {
+  apiRequest,
+  buildProviderLoginUrl,
+  extractErrorMessage,
+  normalizeUser,
+} from '../services/apiClient';
+import { ProviderIcon } from './BrandMark';
 
 const RELEASE_PRESETS = [
   { label: 'Dev (.NET 5173)', url: 'http://localhost:5173' },
@@ -18,11 +35,35 @@ export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUs
   const [nombre, setNombre] = useState(user?.nombre || '');
   const [correo, setCorreo] = useState(user?.correo || '');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [providers, setProviders] = useState(
+    () => AUTH_PROVIDERS.map((provider) => ({ ...provider, configured: null }))
+  );
 
   useEffect(() => {
     setNombre(user?.nombre || '');
     setCorreo(user?.correo || '');
   }, [user?.nombre, user?.correo]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const res = await apiRequest('/api/auth/providers', { baseUrl: apiBaseUrl });
+      if (!active || !res.ok || !res.data) return;
+
+      const remote = Array.isArray(res.data.providers) ? res.data.providers : [];
+      setProviders(
+        AUTH_PROVIDERS.map((provider) => {
+          const match = remote.find((item) => item.id === provider.id);
+          return { ...provider, configured: Boolean(match?.configured) };
+        })
+      );
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [apiBaseUrl]);
 
   const handleSaveProfile = async (event) => {
     event.preventDefault();
@@ -40,8 +81,29 @@ export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUs
     }
 
     const updated = normalizeUser(res.data);
-    if (updated) onUserUpdated?.(updated);
+    if (updated) {
+      onUserUpdated?.({
+        ...user,
+        ...updated,
+        proveedor: user?.proveedor ?? updated.proveedor,
+        proveedores: user?.proveedores ?? updated.proveedores,
+      });
+    }
     showToast('Perfil actualizado en el backend .NET.');
+  };
+
+  const isProviderLinked = (providerId) =>
+    (user?.proveedores || []).some(
+      (item) => String(item).toLowerCase() === providerId.toLowerCase()
+    );
+
+  const handleLinkProvider = (provider) => {
+    if (provider.configured === false) return;
+    window.location.href = buildProviderLoginUrl(
+      provider.loginPath,
+      apiBaseUrl,
+      `${window.location.origin}/sesion`
+    );
   };
 
   const applyUrl = (url) => {
@@ -66,8 +128,8 @@ export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUs
         <div>
           <h2 className="section-title">Mi Cuenta y API</h2>
           <p className="section-subtitle">
-            Identidad resuelta por <span className="mono">GET /api/usuarios/me</span>, configuración
-            del backend y comprobación en vivo de los recursos del estudio.
+            Identidad resuelta por <span className="mono">GET /api/auth/me</span>, proveedores
+            vinculados, configuración del backend y comprobación en vivo de los recursos.
           </p>
         </div>
       </div>
@@ -184,6 +246,89 @@ export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUs
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Linked OAuth providers */}
+      <div className="glass-card" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Link2 size={16} color="#22d3ee" />
+            Proveedores OAuth vinculados
+          </div>
+          <span className="badge mono">
+            {(user?.proveedores || []).length} identidad(es)
+          </span>
+        </div>
+
+        <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          Cada proveedor se asocia al mismo <span className="mono">idUsuario</span> interno de
+          Voxify. Vincular una cuenta nueva requiere haber iniciado sesión previamente.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+          {providers.map((provider) => {
+            const linked = isProviderLinked(provider.id);
+            const configured = provider.configured !== false;
+
+            return (
+              <div
+                key={provider.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: 'rgba(7, 11, 22, 0.7)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="provider-icon-box">
+                    <ProviderIcon providerId={provider.id} size={20} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{provider.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {provider.badge}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {linked ? (
+                    <span className="badge badge-emerald">
+                      <CheckCircle2 size={12} />
+                      Vinculado
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={!configured}
+                      onClick={() => handleLinkProvider(provider)}
+                      title={
+                        configured
+                          ? `Vincular ${provider.name} a tu cuenta`
+                          : 'Proveedor no configurado en el backend'
+                      }
+                    >
+                      <Link2 size={13} />
+                      {configured ? 'Vincular' : 'Sin configurar'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {user?.proveedor && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            Sesión actual emitida por <span className="mono">{user.proveedor}</span>.
+          </div>
+        )}
       </div>
 
       {/* Endpoint matrix */}

@@ -13,25 +13,59 @@ Proyecto .NET para la gestion de idiomas, solicitudes de generacion, audios e hi
 - ASP.NET Core 10
 - Entity Framework Core
 - PostgreSQL
-- Twitch y Microsoft OAuth
+- OAuth 2.0 / OIDC: TikTok, Microsoft Entra ID y Twitch
+- Cookie de sesión propia de Voxify
 
-## Configuracion
+## Autenticacion OAuth 2.0 / OIDC
 
-Las credenciales no deben guardarse en el repositorio. Configure estas variables de entorno:
+Voxify usa un flujo unificado `state` + PKCE y mantiene su propia sesion por cookie.
+Las credenciales se leen desde `backend-dotnet/.env` (ver `.env.example`) o variables de
+entorno. Nunca se guardan en Git.
 
-```bash
-export ConnectionStrings__DefaultConnection='Host=localhost;Database=voxify;Username=postgres;Password=...'
-export TWITCH_CLIENT_ID='...'
-export TWITCH_CLIENT_SECRET='...'
-export MICROSOFT_CLIENT_ID='...'
-export MICROSOFT_CLIENT_SECRET='...'
+```env
+APP_SECRET_KEY=clave_secreta_larga_y_aleatoria
+FRONTEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:5173
+
+TIKTOK_CLIENT_KEY=...
+TIKTOK_CLIENT_SECRET=...
+TIKTOK_REDIRECT_URI=http://localhost:5173/auth/tiktok/callback
+
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+MICROSOFT_TENANT_ID=common
+MICROSOFT_REDIRECT_URI=http://localhost:5173/auth/microsoft/callback
+
+TWITCH_CLIENT_ID=...
+TWITCH_CLIENT_SECRET=...
+TWITCH_REDIRECT_URI=http://localhost:5173/auth/twitch/callback
+
+ALLOW_DEV_USER=true
 ```
 
-Twitch y Microsoft son opcionales: si no se configuran, la aplicacion inicia igualmente, los
-endpoints protegidos responden `401` y `GET /api/auth/login/...` responde `503` con un mensaje
-explicando que falta la configuracion. La autenticacion por cookie sigue activa.
+Registra exactamente estas URLs de retorno en cada portal:
 
-Hay un modelo sin secretos en `backend-dotnet/appsettings.Example.json`.
+- TikTok: `http://localhost:5173/auth/tiktok/callback` (scope `user.info.basic`)
+- Microsoft: `http://localhost:5173/auth/microsoft/callback` (scopes `openid profile email User.Read`)
+- Twitch: `http://localhost:5173/auth/twitch/callback` (scopes `openid user:read:email`)
+
+`ALLOW_DEV_USER=true` habilita el acceso local de desarrollo mientras no haya credenciales
+OAuth. En produccion debe ser `false`.
+
+### Endpoints de autenticacion
+
+| Metodo | Ruta | Descripcion |
+| :--- | :--- | :--- |
+| `GET` | `/api/auth/providers` · `/auth/providers` | Estado de configuracion de cada proveedor. |
+| `GET` | `/api/auth/login/{provider}` · `/auth/{provider}/login` | Inicia el flujo OAuth. |
+| `GET` | `/auth/{provider}/callback` | Callback interno del proveedor. |
+| `GET` | `/api/auth/me` · `/auth/me` | Usuario interno, proveedor y cuentas vinculadas. |
+| `POST` | `/api/auth/logout` · `/auth/logout` | Invalida la cookie de sesion. |
+| `POST` | `/api/auth/dev-login` | Acceso de desarrollo (solo si `ALLOW_DEV_USER`). |
+
+Los recursos de usuario (`/api/usuarios/me`, generaciones, audios, favoritos, clonaciones y
+configuracion) requieren la cookie de sesion de Voxify. Los catalogos `/api/idiomas` y
+`/api/voces` son publicos.
 
 ## Ejecucion
 
@@ -42,15 +76,12 @@ dotnet ef database update
 dotnet run
 ```
 
-Registre las URLs de retorno en los proveedores:
-
-- Twitch: `https://localhost:puerto/signin-twitch`
-- Microsoft: `https://localhost:puerto/signin-microsoft`
+El modelo sin secretos esta en `backend-dotnet/appsettings.Example.json` y las variables de
+autenticacion en `backend-dotnet/.env.example`.
 
 ## Endpoints
 
-Las rutas de recursos usan un usuario local de desarrollo mientras se difiere OAuth
-(especificacion, seccion 1.1):
+Las rutas de recursos requieren la cookie de sesión de Voxify (OAuth o acceso de desarrollo):
 
 - `GET|PUT /api/usuarios/me`
 - `GET /api/idiomas`, `GET /api/idiomas/{id}`

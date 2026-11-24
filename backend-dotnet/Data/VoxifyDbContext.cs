@@ -62,8 +62,15 @@ public class VoxifyDbContext : DbContext
 
         modelBuilder.Entity<Usuario>()
             .Property(u => u.Correo)
-            .IsRequired()
             .HasMaxLength(150);
+
+        modelBuilder.Entity<Usuario>()
+            .Property(u => u.AvatarUrl)
+            .HasMaxLength(500);
+
+        modelBuilder.Entity<Usuario>()
+            .Property(u => u.PasswordHash)
+            .HasMaxLength(500);
 
         // Configuraciones de entidades
         modelBuilder.ApplyConfiguration(new CuentaExternaConfiguration());

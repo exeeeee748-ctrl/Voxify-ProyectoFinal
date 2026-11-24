@@ -1,26 +1,28 @@
 using backend_dotnet.Data;
 using backend_dotnet.DTOs.Audios;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/audios")]
 public class AudiosController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
     private readonly IWebHostEnvironment _environment;
 
     public AudiosController(
         VoxifyDbContext context,
-        IDevUserProvider devUser,
+        ICurrentUserProvider currentUser,
         IWebHostEnvironment environment)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
         _environment = environment;
     }
 
@@ -28,7 +30,7 @@ public class AudiosController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> ObtenerPorId(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var audio = await _context.Audios
             .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
@@ -43,7 +45,7 @@ public class AudiosController : ControllerBase
     [HttpGet("{id}/reproducir")]
     public async Task<IActionResult> Reproducir(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var audio = await _context.Audios
             .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
@@ -62,7 +64,7 @@ public class AudiosController : ControllerBase
     [HttpGet("{id}/descargar")]
     public async Task<IActionResult> Descargar(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var audio = await _context.Audios
             .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);
@@ -81,7 +83,7 @@ public class AudiosController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Ocultar(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var audio = await _context.Audios
             .FirstOrDefaultAsync(a => a.IdAudio == id && a.IdUsuario == usuario.IdUsuario);

@@ -12,13 +12,40 @@ export function setApiBaseUrl(url) {
   window.localStorage.setItem('voxify_api_url', clean);
 }
 
+export const AUTH_PROVIDERS = [
+  {
+    id: 'tiktok',
+    name: 'TikTok',
+    badge: 'OAuth 2.0 + PKCE',
+    description: 'Login Kit · user.info.basic',
+    loginPath: '/api/auth/login/tiktok',
+    accentClass: 'provider-tiktok',
+  },
+  {
+    id: 'microsoft',
+    name: 'Microsoft',
+    badge: 'OAuth 2.0 + OIDC',
+    description: 'Entra ID · openid profile email User.Read',
+    loginPath: '/api/auth/login/microsoft',
+    accentClass: 'provider-microsoft',
+  },
+  {
+    id: 'twitch',
+    name: 'Twitch',
+    badge: 'OAuth 2.0 + OIDC',
+    description: 'Twitch · openid user:read:email',
+    loginPath: '/api/auth/login/twitch',
+    accentClass: 'provider-twitch',
+  },
+];
+
 export const API_ENDPOINTS = [
   {
     id: 'usuario',
     method: 'GET',
     path: '/api/usuarios/me',
-    label: 'Usuario de desarrollo',
-    description: 'Identidad local resuelta por el backend mientras OAuth está diferido.',
+    label: 'Usuario de la sesión',
+    description: 'Identidad interna de Voxify resuelta desde la cookie de sesión.',
   },
   {
     id: 'idiomas',

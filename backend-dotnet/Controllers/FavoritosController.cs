@@ -3,22 +3,24 @@ using backend_dotnet.DTOs.Idiomas;
 using backend_dotnet.DTOs.Voces;
 using backend_dotnet.Models;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/usuarios/me/favoritos")]
 public class FavoritosController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
 
-    public FavoritosController(VoxifyDbContext context, IDevUserProvider devUser)
+    public FavoritosController(VoxifyDbContext context, ICurrentUserProvider currentUser)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
     }
 
     // Voces favoritas
@@ -26,7 +28,7 @@ public class FavoritosController : ControllerBase
     [HttpGet("voces")]
     public async Task<IActionResult> VocesFavoritas()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var voces = await _context.FavoritosVoz
             .Where(f => f.IdUsuario == usuario.IdUsuario)
@@ -43,7 +45,7 @@ public class FavoritosController : ControllerBase
     [HttpPost("voces/{idVoz}")]
     public async Task<IActionResult> AgregarVozFavorita(int idVoz)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         if (!await _context.Voces.AnyAsync(v => v.IdVoz == idVoz))
             return NotFound("Voz no encontrada.");
@@ -67,7 +69,7 @@ public class FavoritosController : ControllerBase
     [HttpDelete("voces/{idVoz}")]
     public async Task<IActionResult> QuitarVozFavorita(int idVoz)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var favorito = await _context.FavoritosVoz
             .FirstOrDefaultAsync(f => f.IdUsuario == usuario.IdUsuario && f.IdVoz == idVoz);
@@ -86,7 +88,7 @@ public class FavoritosController : ControllerBase
     [HttpGet("idiomas")]
     public async Task<IActionResult> IdiomasFavoritos()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var idiomas = await _context.FavoritosIdioma
             .Where(f => f.IdUsuario == usuario.IdUsuario)
@@ -101,7 +103,7 @@ public class FavoritosController : ControllerBase
     [HttpPost("idiomas/{idIdioma}")]
     public async Task<IActionResult> AgregarIdiomaFavorito(int idIdioma)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         if (!await _context.Idiomas.AnyAsync(i => i.IdIdioma == idIdioma && i.Activo))
             return NotFound("Idioma no encontrado.");
@@ -125,7 +127,7 @@ public class FavoritosController : ControllerBase
     [HttpDelete("idiomas/{idIdioma}")]
     public async Task<IActionResult> QuitarIdiomaFavorito(int idIdioma)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var favorito = await _context.FavoritosIdioma
             .FirstOrDefaultAsync(f => f.IdUsuario == usuario.IdUsuario && f.IdIdioma == idIdioma);

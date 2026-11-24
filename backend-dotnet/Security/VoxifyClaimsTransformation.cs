@@ -19,13 +19,14 @@ public class VoxifyClaimsTransformation : IClaimsTransformation
         if (principal.HasClaim(c => c.Type == ClaimPermiso))
             return Task.FromResult(principal);
 
-        var provider = principal.Identities
-            .Select(i => i.AuthenticationType)
-            .FirstOrDefault(t => t is "Twitch" or "Microsoft")
-            ?? principal.Identity.AuthenticationType
+        var provider = principal.FindFirst(VoxifyClaims.Proveedor)?.Value
+            ?? principal.Identities
+                .Select(i => i.AuthenticationType)
+                .FirstOrDefault(t => t is "Twitch" or "Microsoft" or "TikTok")
+            ?? principal.Identity?.AuthenticationType
             ?? string.Empty;
 
-        var userName = principal.Identity.Name
+        var userName = principal.Identity?.Name
             ?? principal.FindFirst("name")?.Value
             ?? principal.FindFirst("preferred_username")?.Value
             ?? string.Empty;

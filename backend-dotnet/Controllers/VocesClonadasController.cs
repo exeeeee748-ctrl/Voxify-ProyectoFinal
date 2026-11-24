@@ -1,6 +1,7 @@
 using backend_dotnet.Data;
 using backend_dotnet.DTOs.VocesClonadas;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VozClonada = backend_dotnet.Models.Voces.VozClonada;
@@ -8,22 +9,23 @@ using VozClonada = backend_dotnet.Models.Voces.VozClonada;
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/voces-clonadas")]
 public class VocesClonadasController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
 
-    public VocesClonadasController(VoxifyDbContext context, IDevUserProvider devUser)
+    public VocesClonadasController(VoxifyDbContext context, ICurrentUserProvider currentUser)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
     }
 
     [HttpGet("/api/usuarios/me/voces-clonadas")]
     public async Task<IActionResult> MisVoces()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var voces = await _context.VocesClonadas
             .Where(v => v.IdUsuario == usuario.IdUsuario)
@@ -37,7 +39,7 @@ public class VocesClonadasController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> ObtenerPorId(int id)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var voz = await _context.VocesClonadas
             .Include(v => v.Voz)

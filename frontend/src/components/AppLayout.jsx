@@ -7,7 +7,6 @@ import {
   LogOut,
   Menu,
   Mic,
-  Server,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -42,7 +41,6 @@ const ROUTE_META = {
 
 export default function AppLayout({
   user,
-  apiBaseUrl,
   generacionesCount,
   voicesCount,
   onLogout,
@@ -153,7 +151,13 @@ export default function AppLayout({
 
         <div className="sidebar-footer">
           <div className="sidebar-user-card">
-            <div className="user-avatar">{initials}</div>
+            <div className="user-avatar">
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt={`Avatar de ${user?.nombre || 'usuario'}`} />
+              ) : (
+                initials
+              )}
+            </div>
             <div className="user-meta" style={{ minWidth: 0, flex: 1 }}>
               <span
                 className="user-name"
@@ -207,11 +211,11 @@ export default function AppLayout({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span className="badge badge-cyan mono">
-              <Server size={12} />
-              {apiBaseUrl.replace(/^https?:\/\//, '')}
+            <span className="badge badge-emerald">
+              {String(user?.proveedor || '').toLowerCase().includes('desarrollo')
+                ? 'Desarrollo'
+                : 'Sesión SSO'}
             </span>
-            <span className="badge badge-emerald">Usuario local</span>
           </div>
         </header>
 

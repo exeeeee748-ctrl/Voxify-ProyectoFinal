@@ -1,34 +1,36 @@
 using backend_dotnet.Data;
 using backend_dotnet.DTOs.Usuarios;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/usuarios")]
 public class UsuariosController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
 
-    public UsuariosController(VoxifyDbContext context, IDevUserProvider devUser)
+    public UsuariosController(VoxifyDbContext context, ICurrentUserProvider currentUser)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
     }
 
     [HttpGet("me")]
     public async Task<IActionResult> Me()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
         return Ok(ToDto(usuario));
     }
 
     [HttpPut("me")]
     public async Task<IActionResult> ActualizarMe(UsuarioUpdateDto dto)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         if (!string.IsNullOrWhiteSpace(dto.Nombre))
             usuario.Nombre = dto.Nombre.Trim();

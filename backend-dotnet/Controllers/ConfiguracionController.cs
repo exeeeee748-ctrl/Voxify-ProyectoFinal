@@ -2,28 +2,30 @@ using backend_dotnet.Data;
 using backend_dotnet.DTOs.Configuracion;
 using backend_dotnet.Models;
 using backend_dotnet.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend_dotnet.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/usuarios/me/configuracion")]
 public class ConfiguracionController : ControllerBase
 {
     private readonly VoxifyDbContext _context;
-    private readonly IDevUserProvider _devUser;
+    private readonly ICurrentUserProvider _currentUser;
 
-    public ConfiguracionController(VoxifyDbContext context, IDevUserProvider devUser)
+    public ConfiguracionController(VoxifyDbContext context, ICurrentUserProvider currentUser)
     {
         _context = context;
-        _devUser = devUser;
+        _currentUser = currentUser;
     }
 
     [HttpGet]
     public async Task<IActionResult> Obtener()
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         var configuracion = await _context.ConfiguracionesUsuario
             .FirstOrDefaultAsync(c => c.IdUsuario == usuario.IdUsuario);
@@ -34,7 +36,7 @@ public class ConfiguracionController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> Guardar(ConfiguracionUsuarioDto dto)
     {
-        var usuario = await _devUser.ObtenerAsync();
+        var usuario = await _currentUser.ObtenerAsync();
 
         if (dto.IdUltimaVoz.HasValue &&
             !await _context.Voces.AnyAsync(v => v.IdVoz == dto.IdUltimaVoz.Value))

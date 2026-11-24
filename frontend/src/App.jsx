@@ -4,6 +4,7 @@ import { Sparkles } from 'lucide-react';
 import { getApiBaseUrl, setApiBaseUrl } from './config/voxifyConfig';
 import {
   apiRequest,
+  extractErrorMessage,
   normalizeAudio,
   normalizeClonacion,
   normalizeGeneracion,
@@ -190,23 +191,12 @@ export default function App() {
     async (baseUrl = apiBaseUrl) => {
       setConnecting(true);
 
-      const res = await apiRequest('/api/usuarios/me', { baseUrl });
-      if (res.ok) {
-        const normalized = normalizeUser(res.data);
-        if (normalized) {
-          setUser(normalized);
-          setLoginNotice('');
-          await loadData(baseUrl);
-          setConnecting(false);
-          return true;
-        }
-      }
-
       const authRes = await apiRequest('/api/auth/me', { baseUrl });
       if (authRes.ok) {
         const normalized = normalizeUser(authRes.data);
         if (normalized) {
           setUser(normalized);
+          setLoginNotice('');
           await loadData(baseUrl);
           setConnecting(false);
           return true;
@@ -282,23 +272,44 @@ export default function App() {
   };
 
   const handleDevLogin = async () => {
+    setConnecting(true);
+    const res = await apiRequest('/api/auth/dev-login', {
+      method: 'POST',
+      baseUrl: apiBaseUrl,
+    });
+    setConnecting(false);
+
+    if (!res.ok) {
+      setLoginNotice(
+        extractErrorMessage(
+          res,
+          'El acceso de desarrollo está deshabilitado o el backend no está disponible.'
+        )
+      );
+      showToast('No se pudo iniciar la sesión de desarrollo.', 'error');
+      return;
+    }
+
     const ok = await checkSession(apiBaseUrl);
     if (ok) {
       navigate('/estudio', { replace: true });
       showToast('Sesión de desarrollo iniciada con el backend .NET.');
-    } else {
-      setLoginNotice(
-        'No se pudo conectar con el backend .NET. Verifica que esté en ejecución y que la URL sea correcta.'
-      );
-      showToast('Backend no disponible. Revisa la URL de la API.', 'error');
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await apiRequest('/api/auth/logout', {
+      method: 'POST',
+      baseUrl: apiBaseUrl,
+    });
+
     setUser(null);
-    setLoginNotice(
-      'Sesión local finalizada. El backend sigue usando un usuario de desarrollo para esta fase.'
-    );
+    setIdiomas([]);
+    setVoices([]);
+    setFavoriteVoices([]);
+    setGeneraciones([]);
+    setClonaciones([]);
+    setLoginNotice('Sesión cerrada correctamente. Vuelve a iniciar sesión con un proveedor.');
     navigate('/login', { replace: true });
   };
 
@@ -311,7 +322,6 @@ export default function App() {
     return (
       <AppLayout
         user={user}
-        apiBaseUrl={apiBaseUrl}
         generacionesCount={generaciones.length}
         voicesCount={voices.length}
         onLogout={handleLogout}

@@ -4,10 +4,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace backend_dotnet.Services;
 
-// TEMPORAL (sección 1.1 de la especificación): mecanismo aislado de usuario
-// de desarrollo/local mientras no exista OAuth. Se sustituirá por la
-// resolución del usuario autenticado en una fase posterior. No se confía
-// en un IdUsuario enviado por el frontend.
+// Acceso local de desarrollo complementario al SSO. Permite probar la
+// aplicación cuando todavía no se han configurado las credenciales OAuth.
+// No se confía en un IdUsuario enviado por el frontend: la identidad se
+// resuelve desde la cookie emitida por /api/auth/dev-login.
 
 public interface IDevUserProvider
 {

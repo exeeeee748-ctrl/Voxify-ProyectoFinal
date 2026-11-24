@@ -18,6 +18,15 @@ public class CuentaExternaConfiguration : IEntityTypeConfiguration<CuentaExterna
             .IsRequired()
             .HasMaxLength(255);
 
+        builder.Property(c => c.CorreoProveedor)
+            .HasMaxLength(255);
+
+        builder.Property(c => c.AccessToken)
+            .HasMaxLength(4000);
+
+        builder.Property(c => c.RefreshToken)
+            .HasMaxLength(4000);
+
         builder.HasIndex(c => new
         {
             c.Proveedor,

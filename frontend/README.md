@@ -1,15 +1,27 @@
 # Voxify Frontend
 
 Interfaz web de **Voxify** (conversión de texto a voz con Kitten TTS 2) conectada al backend
-`.NET` y al microservicio **FastAPI**.
+`.NET`, al microservicio **FastAPI** y al SSO de **TikTok, Microsoft y Twitch**.
 
-## Integración con el backend
+## Autenticación
 
-El frontend usa el **usuario local de desarrollo** del backend (OAuth está diferido por
-especificación). Al abrir la aplicación se consulta:
+La aplicación inicia sesión con OAuth 2.0 / OIDC:
+
+- **TikTok** (Login Kit + PKCE)
+- **Microsoft** (Entra ID)
+- **Twitch**
+
+El botón de cada proveedor se habilita solo si el backend lo tiene configurado. El callback se
+procesa en el backend y este emite una cookie `HttpOnly` propia de Voxify. La vista
+`Mi Cuenta & API` permite ver los proveedores vinculados, vincular uno nuevo y editar el perfil.
+
+Si `ALLOW_DEV_USER=true` en el backend, también aparece un acceso de desarrollo para probar la
+aplicación sin credenciales OAuth.
+
+Al abrir la aplicación se consulta:
 
 ```text
-GET /api/usuarios/me
+GET /api/auth/me
 ```
 
 y luego se cargan en paralelo:
@@ -28,7 +40,8 @@ y luego se cargan en paralelo:
 
 1. `POST /api/generaciones` con `{ texto, idVoz, idIdioma }`.
 2. `POST /api/generaciones/{id}/sintetizar` con `{ formato, velocidad }`.
-3. Reproducción y descarga desde `/api/audios/{id}/reproducir` y `/api/audios/{id}/descargar`.
+3. Reproducción y descarga autenticadas desde `/api/audios/{id}/reproducir` y
+   `/api/audios/{id}/descargar`.
 
 ### Voces y clonación
 
@@ -45,7 +58,8 @@ consultan en `GET /api/audios/{id}`. La acción “Ocultar” usa
 ### Reportes
 
 `GET /api/Reportes/produccion-audios` está protegido por la política
-`ReporteProduccionAudios`. Con OAuth diferido devuelve `401`, y la vista lo explica en pantalla.
+`ReporteProduccionAudios`. Los usuarios que inician sesión con Twitch reciben el rol
+`AnalistaReportes`; otros proveedores reciben el rol `Usuario`.
 
 ## Ejecución en desarrollo
 

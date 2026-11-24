@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   apiRequest,
+  downloadAudioFile,
   extractErrorMessage,
   getAudioUrl,
   normalizeAudio,
@@ -88,7 +89,9 @@ export default function VoiceStudioTab({
       audioRef.current = null;
     }
 
-    const audio = new Audio(getAudioUrl(item.audioId, 'reproducir', apiBaseUrl));
+    const audio = new Audio();
+    audio.crossOrigin = 'use-credentials';
+    audio.src = getAudioUrl(item.audioId, 'reproducir', apiBaseUrl);
     audio.playbackRate = rate;
     audio.preload = 'auto';
 
@@ -224,14 +227,19 @@ export default function VoiceStudioTab({
     startPlayback(item);
   };
 
-  const handleDownloadAudio = () => {
+  const handleDownloadAudio = async () => {
     if (!generatedItem?.audioId) return;
-    const url = getAudioUrl(generatedItem.audioId, 'descargar', apiBaseUrl);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.rel = 'noopener';
-    anchor.click();
-    showToast(`Descargando ${generatedItem.nombreArchivo || 'audio generado'}...`);
+
+    try {
+      await downloadAudioFile(
+        generatedItem.audioId,
+        generatedItem.nombreArchivo || 'audio',
+        apiBaseUrl
+      );
+      showToast(`Descargando ${generatedItem.nombreArchivo || 'audio generado'}...`);
+    } catch (error) {
+      showToast(error.message || 'No se pudo descargar el audio.', 'error');
+    }
   };
 
   const handleRefreshCatalog = async () => {
