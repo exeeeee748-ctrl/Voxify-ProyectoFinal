@@ -322,6 +322,15 @@ export default function LoginView({
           }}
         >
           <a
+            href="/legal.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}
+          >
+            Centro Legal
+          </a>
+          <span>·</span>
+          <a
             href="/terms.html"
             target="_blank"
             rel="noopener noreferrer"
