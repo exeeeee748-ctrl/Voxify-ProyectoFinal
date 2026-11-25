@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir \
     soundfile \
     scalar-fastapi
 
+# Fijar transformers 4.x y diffusers <0.37 compatibles con Kitten TTS 2
+# (en transformers 5.x el kwarg past_key_values cambio a cache y rompe el hook de hablante).
+RUN pip install --no-cache-dir "transformers>=4.55.0,<5.0.0" "diffusers<0.37.0"
+
 COPY app ./app
 
 EXPOSE 8000
