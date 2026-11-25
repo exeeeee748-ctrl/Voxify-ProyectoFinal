@@ -181,7 +181,7 @@ export default function AppLayout({
             onClick={onLogout}
           >
             <LogOut size={15} />
-            Cerrar sesión local
+            Single Sign-Out
           </button>
         </div>
       </aside>
@@ -211,11 +211,16 @@ export default function AppLayout({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span className="badge badge-emerald">
+            <NavLink
+              to="/sesion"
+              className="badge badge-emerald"
+              style={{ textDecoration: 'none', cursor: 'pointer' }}
+              title="Ver sesiones activas y Single Sign-Out"
+            >
               {String(user?.proveedor || '').toLowerCase().includes('desarrollo')
                 ? 'Desarrollo'
                 : 'Sesión SSO'}
-            </span>
+            </NavLink>
           </div>
         </header>
 

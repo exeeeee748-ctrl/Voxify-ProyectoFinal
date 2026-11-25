@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
   CheckCircle2,
+  Database,
   KeyRound,
   Link2,
+  LogOut,
   Mail,
   Play,
+  RefreshCw,
   Save,
   Server,
   ShieldCheck,
@@ -28,16 +31,57 @@ const RELEASE_PRESETS = [
   { label: 'Instancia 4 (:5004)', url: 'http://localhost:5004' },
 ];
 
-export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUserUpdated, showToast }) {
+export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUserUpdated, onLogout, showToast }) {
   const [urlInput, setUrlInput] = useState(apiBaseUrl);
   const [probeMap, setProbeMap] = useState({});
   const [testingId, setTestingId] = useState(null);
   const [nombre, setNombre] = useState(user?.nombre || '');
   const [correo, setCorreo] = useState(user?.correo || '');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [sessionsData, setSessionsData] = useState({ activas: 0, sesiones: [] });
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [revokingId, setRevokingId] = useState(null);
   const [providers, setProviders] = useState(
     () => AUTH_PROVIDERS.map((provider) => ({ ...provider, configured: null }))
   );
+
+  const loadSessions = async () => {
+    setLoadingSessions(true);
+    const res = await apiRequest('/api/auth/sesiones', { baseUrl: apiBaseUrl });
+    setLoadingSessions(false);
+    if (res.ok && res.data) {
+      setSessionsData({
+        activas: res.data.activas ?? 0,
+        sesiones: Array.isArray(res.data.sesiones) ? res.data.sesiones : [],
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadSessions();
+  }, [apiBaseUrl]);
+
+  const handleRevokeSession = async (sessionItem) => {
+    setRevokingId(sessionItem.idSesion);
+    const res = await apiRequest(`/api/auth/sesiones/${sessionItem.idSesion}`, {
+      method: 'DELETE',
+      baseUrl: apiBaseUrl,
+    });
+    setRevokingId(null);
+
+    if (!res.ok) {
+      showToast(extractErrorMessage(res, 'No se pudo revocar la sesión.'), 'error');
+      return;
+    }
+
+    if (sessionItem.esActual) {
+      await onLogout?.();
+      return;
+    }
+
+    showToast('Sesión revocada en PostgreSQL.');
+    await loadSessions();
+  };
 
   useEffect(() => {
     setNombre(user?.nombre || '');
@@ -329,6 +373,113 @@ export default function SecurityTab({ user, apiBaseUrl, onApiBaseUrlChange, onUs
             Sesión actual emitida por <span className="mono">{user.proveedor}</span>.
           </div>
         )}
+      </div>
+
+      {/* Single Sign-Out PostgreSQL sessions */}
+      <div className="glass-card" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Database size={16} color="#22d3ee" />
+            Sesiones en PostgreSQL · Single Sign-Out
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="badge badge-emerald mono">
+              {sessionsData.activas} activa(s)
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={loadingSessions}
+              onClick={loadSessions}
+            >
+              <RefreshCw size={13} />
+              {loadingSessions ? 'Actualizando...' : 'Actualizar'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(244, 63, 94, 0.16)',
+                border: '1px solid rgba(244, 63, 94, 0.45)',
+                color: '#fda4af',
+              }}
+              onClick={() => onLogout?.()}
+            >
+              <LogOut size={13} />
+              Single Sign-Out global
+            </button>
+          </div>
+        </div>
+
+        <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          Cada inicio de sesión se registra en la tabla <span className="mono">SesionesUsuario</span> de
+          PostgreSQL y se valida en cada petición. Al ejecutar <strong>Single Sign-Out global</strong>, todas
+          las cookies activas en otros navegadores o instancias (<span className="mono">5001–5004</span>) quedan
+          revocadas inmediatamente con <span className="mono">401 Unauthorized</span>.
+        </p>
+
+        <div className="table-wrap">
+          <table className="vox-table">
+            <thead>
+              <tr>
+                <th>Sesión</th>
+                <th>Proveedor</th>
+                <th>Estado</th>
+                <th>Inicio</th>
+                <th>Motivo / Revocación</th>
+                <th style={{ textAlign: 'right' }}>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessionsData.sesiones.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 14 }}>
+                    No hay sesiones registradas todavía.
+                  </td>
+                </tr>
+              ) : (
+                sessionsData.sesiones.map((s) => (
+                  <tr key={s.idSesion}>
+                    <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                      {String(s.idSesion).slice(0, 8)}…
+                      {s.esActual && (
+                        <span className="badge badge-cyan" style={{ marginLeft: 6 }}>
+                          Actual
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ textTransform: 'capitalize' }}>{s.proveedor}</td>
+                    <td>
+                      <span className={`badge ${s.activa ? 'badge-emerald' : 'badge-rose'}`}>
+                        {s.activa ? 'Activa' : 'Revocada'}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                      {s.fechaCreacion ? new Date(s.fechaCreacion).toLocaleString() : '—'}
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                      {s.activa ? 'Vigente' : s.motivoRevocacion || 'Revocada'}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {s.activa ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={revokingId === s.idSesion}
+                          onClick={() => handleRevokeSession(s)}
+                        >
+                          {revokingId === s.idSesion ? 'Revocando...' : 'Revocar'}
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Cerrada</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Endpoint matrix */}

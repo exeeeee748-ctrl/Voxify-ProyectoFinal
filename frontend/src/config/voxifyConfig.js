@@ -48,6 +48,13 @@ export const API_ENDPOINTS = [
     description: 'Identidad interna de Voxify resuelta desde la cookie de sesión.',
   },
   {
+    id: 'sesiones',
+    method: 'GET',
+    path: '/api/auth/sesiones',
+    label: 'Sesiones PostgreSQL (SSO)',
+    description: 'Sesiones activas y revocadas en PostgreSQL para Single Sign-Out.',
+  },
+  {
     id: 'idiomas',
     method: 'GET',
     path: '/api/idiomas',

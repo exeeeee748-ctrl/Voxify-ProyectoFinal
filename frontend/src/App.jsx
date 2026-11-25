@@ -298,10 +298,12 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await apiRequest('/api/auth/logout', {
+    const res = await apiRequest('/api/auth/logout', {
       method: 'POST',
       baseUrl: apiBaseUrl,
     });
+
+    const revocadas = res?.data?.sesionesRevocadas;
 
     setUser(null);
     setIdiomas([]);
@@ -309,7 +311,11 @@ export default function App() {
     setFavoriteVoices([]);
     setGeneraciones([]);
     setClonaciones([]);
-    setLoginNotice('Sesión cerrada correctamente. Vuelve a iniciar sesión con un proveedor.');
+    setLoginNotice(
+      typeof revocadas === 'number' && revocadas > 0
+        ? `Single Sign-Out completado (${revocadas} sesión(es) revocada(s) en PostgreSQL). Vuelve a iniciar sesión con un proveedor.`
+        : 'Single Sign-Out completado en PostgreSQL. Vuelve a iniciar sesión con un proveedor.'
+    );
     navigate('/login', { replace: true });
   };
 
@@ -437,6 +443,7 @@ export default function App() {
                   apiBaseUrl={apiBaseUrl}
                   onApiBaseUrlChange={handleApiBaseUrlChange}
                   onUserUpdated={setUser}
+                  onLogout={handleLogout}
                   showToast={showToast}
                 />
               )}

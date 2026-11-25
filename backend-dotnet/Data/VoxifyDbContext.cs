@@ -19,6 +19,8 @@ public class VoxifyDbContext : DbContext
 
     public DbSet<CuentaExterna> CuentasExternas { get; set; }
 
+    public DbSet<SesionUsuario> SesionesUsuario { get; set; }
+
     public DbSet<ConfiguracionUsuario> ConfiguracionesUsuario { get; set; }
 
     public DbSet<FavoritoVoz> FavoritosVoz { get; set; }
@@ -74,6 +76,8 @@ public class VoxifyDbContext : DbContext
 
         // Configuraciones de entidades
         modelBuilder.ApplyConfiguration(new CuentaExternaConfiguration());
+
+        modelBuilder.ApplyConfiguration(new SesionUsuarioConfiguration());
 
         modelBuilder.ApplyConfiguration(new ConfiguracionUsuarioConfiguration());
 

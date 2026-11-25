@@ -24,6 +24,9 @@ public class Usuario
     public ICollection<CuentaExterna> CuentasExternas { get; set; }
         = new List<CuentaExterna>();
 
+    public ICollection<SesionUsuario> Sesiones { get; set; }
+        = new List<SesionUsuario>();
+
     public ConfiguracionUsuario? Configuracion { get; set; }
 
     public ICollection<FavoritoVoz> VocesFavoritas { get; set; }
