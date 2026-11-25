@@ -1,7 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
 import { getApiBaseUrl, setApiBaseUrl } from './config/voxifyConfig';
+
+const AUTH_CHANNEL_NAME = 'voxify-auth-sync';
+const AUTH_STORAGE_KEY = 'voxify_auth_sync_event';
+
+function broadcastAuthEvent(type, payload = {}) {
+  const message = { type, ts: Date.now(), ...payload };
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+      channel.postMessage(message);
+      channel.close();
+    }
+  } catch {
+    // Ignorar si BroadcastChannel no está disponible.
+  }
+  try {
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(message));
+  } catch {
+    // Ignorar en contextos sin almacenamiento.
+  }
+}
 import {
   apiRequest,
   extractErrorMessage,
@@ -23,6 +44,7 @@ import SecurityTab from './components/SecurityTab';
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [apiBaseUrl, setApiBaseUrlState] = useState(() => getApiBaseUrl());
   const [user, setUser] = useState(null);
   const [connecting, setConnecting] = useState(true);
@@ -42,10 +64,21 @@ export default function App() {
   const [loginNotice, setLoginNotice] = useState('');
   const [toast, setToast] = useState(null);
   const configRef = useRef(configuracion);
+  const userRef = useRef(user);
+  const syncingRef = useRef(false);
+  const pathnameRef = useRef(location.pathname);
 
   useEffect(() => {
     configRef.current = configuracion;
   }, [configuracion]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    pathnameRef.current = location.pathname;
+  }, [location.pathname]);
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
@@ -187,6 +220,23 @@ export default function App() {
     [apiBaseUrl, attachAudio]
   );
 
+  const clearLocalSession = useCallback(
+    (notice) => {
+      userRef.current = null;
+      setUser(null);
+      setIdiomas([]);
+      setVoices([]);
+      setFavoriteVoices([]);
+      setGeneraciones([]);
+      setClonaciones([]);
+      if (notice) setLoginNotice(notice);
+      if (pathnameRef.current !== '/login') {
+        navigate('/login', { replace: true });
+      }
+    },
+    [navigate]
+  );
+
   const checkSession = useCallback(
     async (baseUrl = apiBaseUrl) => {
       setConnecting(true);
@@ -195,14 +245,17 @@ export default function App() {
       if (authRes.ok) {
         const normalized = normalizeUser(authRes.data);
         if (normalized) {
+          userRef.current = normalized;
           setUser(normalized);
           setLoginNotice('');
+          broadcastAuthEvent('login', { idUsuario: normalized.id });
           await loadData(baseUrl);
           setConnecting(false);
           return true;
         }
       }
 
+      userRef.current = null;
       setUser(null);
       setConnecting(false);
       return false;
@@ -210,9 +263,111 @@ export default function App() {
     [apiBaseUrl, loadData]
   );
 
+  const syncSessionSilently = useCallback(
+    async (baseUrl = apiBaseUrl) => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      try {
+        const authRes = await apiRequest('/api/auth/me', { baseUrl });
+        if (authRes.ok) {
+          const normalized = normalizeUser(authRes.data);
+          if (normalized) {
+            const prev = userRef.current;
+            const changed =
+              !prev ||
+              String(prev.id) !== String(normalized.id) ||
+              prev.proveedor !== normalized.proveedor;
+
+            userRef.current = normalized;
+            setUser(normalized);
+            setLoginNotice('');
+
+            if (changed) {
+              await loadData(baseUrl);
+              if (pathnameRef.current === '/login') {
+                navigate('/estudio', { replace: true });
+              }
+              if (!prev) {
+                showToast('Sesión SSO detectada automáticamente.');
+              }
+            }
+          }
+        } else if (authRes.status === 401 && userRef.current) {
+          clearLocalSession(
+            'Sesión cerrada automáticamente por Single Sign-Out en PostgreSQL.'
+          );
+          showToast('Single Sign-Out detectado: sesión cerrada en esta pestaña.', 'info');
+        }
+      } finally {
+        syncingRef.current = false;
+      }
+    },
+    [apiBaseUrl, clearLocalSession, loadData, navigate, showToast]
+  );
+
   useEffect(() => {
     checkSession(apiBaseUrl);
   }, [apiBaseUrl, checkSession]);
+
+  useEffect(() => {
+    const handleEvent = (data) => {
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'logout') {
+        if (userRef.current) {
+          clearLocalSession(
+            'Sesión cerrada automáticamente por Single Sign-Out en PostgreSQL.'
+          );
+          showToast('Single Sign-Out detectado en otra pestaña.', 'info');
+        }
+      } else if (data.type === 'login') {
+        syncSessionSilently(apiBaseUrl);
+      }
+    };
+
+    let channel = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+        channel.onmessage = (event) => handleEvent(event.data);
+      }
+    } catch {
+      channel = null;
+    }
+
+    const onStorage = (event) => {
+      if (event.key !== AUTH_STORAGE_KEY || !event.newValue) return;
+      try {
+        handleEvent(JSON.parse(event.newValue));
+      } catch {
+        // Ignorar JSON inválido.
+      }
+    };
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'hidden') return;
+      syncSessionSilently(apiBaseUrl);
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    // Revalidación periódica ligera contra PostgreSQL para sincronizar incluso
+    // entre ventana normal y ventana privada (que no comparten BroadcastChannel).
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncSessionSilently(apiBaseUrl);
+      }
+    }, 3000);
+
+    return () => {
+      if (channel) channel.close();
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.clearInterval(intervalId);
+    };
+  }, [apiBaseUrl, clearLocalSession, showToast, syncSessionSilently]);
 
   const handleApiBaseUrlChange = (nextUrl) => {
     const clean = (nextUrl || 'http://localhost:5173').trim().replace(/\/$/, '');
@@ -305,18 +460,12 @@ export default function App() {
 
     const revocadas = res?.data?.sesionesRevocadas;
 
-    setUser(null);
-    setIdiomas([]);
-    setVoices([]);
-    setFavoriteVoices([]);
-    setGeneraciones([]);
-    setClonaciones([]);
-    setLoginNotice(
+    broadcastAuthEvent('logout', { revocadas });
+    clearLocalSession(
       typeof revocadas === 'number' && revocadas > 0
         ? `Single Sign-Out completado (${revocadas} sesión(es) revocada(s) en PostgreSQL). Vuelve a iniciar sesión con un proveedor.`
         : 'Single Sign-Out completado en PostgreSQL. Vuelve a iniciar sesión con un proveedor.'
     );
-    navigate('/login', { replace: true });
   };
 
   const handleAudioGenerated = async () => {
