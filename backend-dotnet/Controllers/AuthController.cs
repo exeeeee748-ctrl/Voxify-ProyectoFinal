@@ -19,17 +19,20 @@ public class AuthController : ControllerBase
     private readonly OAuthProviderSettings _providers;
     private readonly VoxifyDbContext _context;
     private readonly IDevUserProvider _devUser;
+    private readonly ISesionUsuarioService _sesiones;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         OAuthProviderSettings providers,
         VoxifyDbContext context,
         IDevUserProvider devUser,
+        ISesionUsuarioService sesiones,
         ILogger<AuthController> logger)
     {
         _providers = providers;
         _context = context;
         _devUser = devUser;
+        _sesiones = sesiones;
         _logger = logger;
     }
 
@@ -124,6 +127,7 @@ public class AuthController : ControllerBase
         {
             Autenticado = true,
             IdUsuario = usuario.IdUsuario,
+            IdSesion = User.FindFirst(VoxifyClaims.IdSesion)?.Value,
             Nombre = usuario.Nombre,
             Correo = usuario.Correo,
             AvatarUrl = usuario.AvatarUrl,
@@ -139,15 +143,136 @@ public class AuthController : ControllerBase
         });
     }
 
+    [HttpGet("sesiones")]
+    [HttpGet("/auth/sesiones")]
+    [Authorize]
+    public async Task<IActionResult> Sesiones(CancellationToken cancellationToken)
+    {
+        var idClaim = User.FindFirst(VoxifyClaims.IdUsuario)?.Value;
+        if (!int.TryParse(idClaim, out var idUsuario))
+            return Unauthorized(new { error = "No hay una sesión de Voxify válida." });
+
+        Guid.TryParse(User.FindFirst(VoxifyClaims.IdSesion)?.Value, out var idSesionActual);
+
+        var sesiones = await _sesiones.ListarPorUsuarioAsync(idUsuario, cancellationToken);
+        var now = DateTime.UtcNow;
+
+        return Ok(new
+        {
+            idUsuario,
+            idSesionActual = idSesionActual == Guid.Empty ? (Guid?)null : idSesionActual,
+            activas = sesiones.Count(s => s.Activa && s.FechaRevocacion == null && s.FechaExpiracion > now),
+            total = sesiones.Count,
+            sesiones = sesiones.Select(s => new
+            {
+                idSesion = s.IdSesion,
+                proveedor = s.Proveedor,
+                activa = s.Activa && s.FechaRevocacion == null && s.FechaExpiracion > now,
+                esActual = idSesionActual != Guid.Empty && s.IdSesion == idSesionActual,
+                fechaCreacion = s.FechaCreacion,
+                fechaExpiracion = s.FechaExpiracion,
+                fechaRevocacion = s.FechaRevocacion,
+                motivoRevocacion = s.MotivoRevocacion,
+                ipOrigen = s.IpOrigen,
+                userAgent = s.UserAgent
+            })
+        });
+    }
+
+    [HttpDelete("sesiones/{idSesion:guid}")]
+    [HttpDelete("/auth/sesiones/{idSesion:guid}")]
+    [Authorize]
+    public async Task<IActionResult> RevocarSesion(
+        Guid idSesion,
+        CancellationToken cancellationToken)
+    {
+        var idClaim = User.FindFirst(VoxifyClaims.IdUsuario)?.Value;
+        if (!int.TryParse(idClaim, out var idUsuario))
+            return Unauthorized(new { error = "No hay una sesión de Voxify válida." });
+
+        var revocada = await _sesiones.RevocarSesionAsync(
+            idSesion,
+            idUsuario,
+            "Revocada desde panel de sesiones",
+            cancellationToken);
+
+        if (!revocada)
+            return NotFound(new { error = "Sesión no encontrada o ya revocada." });
+
+        var esActual = Guid.TryParse(User.FindFirst(VoxifyClaims.IdSesion)?.Value, out var actual)
+            && actual == idSesion;
+
+        if (esActual)
+        {
+            await HttpContext.SignOutAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme);
+        }
+
+        _logger.LogInformation(
+            "Sesión individual revocada | idUsuario={IdUsuario} | idSesion={IdSesion} | esActual={EsActual}",
+            idUsuario,
+            idSesion,
+            esActual);
+
+        return Ok(new
+        {
+            mensaje = "Sesión revocada en PostgreSQL.",
+            idSesion,
+            esActual
+        });
+    }
+
     [HttpPost("logout")]
     [HttpPost("/auth/logout")]
+    [HttpPost("single-sign-out")]
+    [HttpPost("/auth/single-sign-out")]
     [AllowAnonymous]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout(
+        [FromQuery] string scope = "global",
+        CancellationToken cancellationToken = default)
     {
+        var esGlobal = !string.Equals(scope, "local", StringComparison.OrdinalIgnoreCase);
+        var sesionesRevocadas = 0;
+
+        var idUsuarioRaw = User.FindFirst(VoxifyClaims.IdUsuario)?.Value;
+        var idSesionRaw = User.FindFirst(VoxifyClaims.IdSesion)?.Value;
+
+        if (int.TryParse(idUsuarioRaw, out var idUsuario))
+        {
+            if (esGlobal)
+            {
+                sesionesRevocadas = await _sesiones.RevocarTodasAsync(
+                    idUsuario,
+                    "Single Sign-Out global",
+                    cancellationToken);
+
+                _logger.LogInformation(
+                    "Single Sign-Out ejecutado | idUsuario={IdUsuario} | sesionesRevocadas={Count}",
+                    idUsuario,
+                    sesionesRevocadas);
+            }
+            else if (Guid.TryParse(idSesionRaw, out var idSesion))
+            {
+                var revocada = await _sesiones.RevocarSesionAsync(
+                    idSesion,
+                    idUsuario,
+                    "Cierre de sesión local",
+                    cancellationToken);
+                sesionesRevocadas = revocada ? 1 : 0;
+            }
+        }
+
         await HttpContext.SignOutAsync(
             CookieAuthenticationDefaults.AuthenticationScheme);
 
-        return Ok(new { mensaje = "Sesión cerrada correctamente" });
+        return Ok(new
+        {
+            mensaje = esGlobal
+                ? "Single Sign-Out completado. Todas las sesiones activas fueron revocadas en PostgreSQL."
+                : "Sesión local cerrada correctamente.",
+            singleSignOut = esGlobal,
+            sesionesRevocadas
+        });
     }
 
     [HttpPost("dev-login")]
@@ -164,6 +289,11 @@ public class AuthController : ControllerBase
         }
 
         var usuario = await _devUser.ObtenerAsync(cancellationToken);
+        var sesion = await _sesiones.CrearSesionAsync(
+            usuario.IdUsuario,
+            "development",
+            HttpContext,
+            cancellationToken);
 
         var identity = new ClaimsIdentity(
             CookieAuthenticationDefaults.AuthenticationScheme);
@@ -171,6 +301,9 @@ public class AuthController : ControllerBase
         identity.AddClaim(new Claim(
             VoxifyClaims.IdUsuario,
             usuario.IdUsuario.ToString()));
+        identity.AddClaim(new Claim(
+            VoxifyClaims.IdSesion,
+            sesion.IdSesion.ToString()));
         identity.AddClaim(new Claim(ClaimTypes.Name, usuario.Nombre));
         identity.AddClaim(new Claim(VoxifyClaims.Proveedor, "development"));
 

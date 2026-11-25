@@ -250,6 +250,53 @@ namespace backend_dotnet.Migrations
                     b.ToTable("Idiomas");
                 });
 
+            modelBuilder.Entity("backend_dotnet.Models.SesionUsuario", b =>
+                {
+                    b.Property<Guid>("IdSesion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Activa")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("FechaExpiracion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FechaRevocacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("IdUsuario")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IpOrigen")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("MotivoRevocacion")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("Proveedor")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("IdSesion");
+
+                    b.HasIndex("IdUsuario", "Activa");
+
+                    b.ToTable("SesionesUsuario", (string)null);
+                });
+
             modelBuilder.Entity("backend_dotnet.Models.SolicitudGeneracion", b =>
                 {
                     b.Property<int>("IdSolicitudGeneracion")
@@ -617,6 +664,17 @@ namespace backend_dotnet.Migrations
                     b.Navigation("Audio");
                 });
 
+            modelBuilder.Entity("backend_dotnet.Models.SesionUsuario", b =>
+                {
+                    b.HasOne("backend_dotnet.Models.Usuario", "Usuario")
+                        .WithMany("Sesiones")
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Usuario");
+                });
+
             modelBuilder.Entity("backend_dotnet.Models.SolicitudGeneracion", b =>
                 {
                     b.HasOne("backend_dotnet.Models.Audio", "Audio")
@@ -745,6 +803,8 @@ namespace backend_dotnet.Migrations
                     b.Navigation("CuentasExternas");
 
                     b.Navigation("IdiomasFavoritos");
+
+                    b.Navigation("Sesiones");
 
                     b.Navigation("SolicitudesClonacion");
 

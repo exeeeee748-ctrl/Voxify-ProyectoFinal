@@ -108,6 +108,7 @@ builder.Services.Configure<TtsOptions>(
 builder.Services.AddScoped<IDevUserProvider, DevUserProvider>();
 builder.Services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 builder.Services.AddScoped<IUsuarioOAuthService, UsuarioOAuthService>();
+builder.Services.AddScoped<ISesionUsuarioService, SesionUsuarioService>();
 
 builder.Services.AddHttpClient<ITtsService, TtsService>((serviceProvider, client) =>
 {
@@ -168,6 +169,37 @@ var authenticationBuilder = builder.Services
         options.Cookie.SecurePolicy = cookieSecurePolicy;
         options.ExpireTimeSpan = TimeSpan.FromDays(7);
         options.SlidingExpiration = true;
+
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var principal = context.Principal;
+            var idUsuarioRaw = principal?.FindFirst(VoxifyClaims.IdUsuario)?.Value;
+            var idSesionRaw = principal?.FindFirst(VoxifyClaims.IdSesion)?.Value;
+
+            if (!int.TryParse(idUsuarioRaw, out var idUsuario) ||
+                !Guid.TryParse(idSesionRaw, out var idSesion))
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(
+                    CookieAuthenticationDefaults.AuthenticationScheme);
+                return;
+            }
+
+            var sesionService = context.HttpContext.RequestServices
+                .GetRequiredService<ISesionUsuarioService>();
+
+            var activa = await sesionService.EsSesionActivaAsync(
+                idSesion,
+                idUsuario,
+                context.HttpContext.RequestAborted);
+
+            if (!activa)
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(
+                    CookieAuthenticationDefaults.AuthenticationScheme);
+            }
+        };
 
         options.Events.OnRedirectToLogin = context =>
         {
@@ -238,6 +270,12 @@ if (oauthSettings.Microsoft.IsConfigured)
             $"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token";
         options.Events.OnTicketReceived = OAuthTicketHandler.HandleTicketReceived;
         options.Events.OnRemoteFailure = OAuthTicketHandler.HandleRemoteFailure;
+        options.Events.OnRedirectToAuthorizationEndpoint = context =>
+        {
+            var separator = context.RedirectUri.Contains('?') ? "&" : "?";
+            context.Response.Redirect($"{context.RedirectUri}{separator}prompt=select_account");
+            return Task.CompletedTask;
+        };
     });
 }
 

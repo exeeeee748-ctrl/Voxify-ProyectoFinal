@@ -85,10 +85,22 @@ public static class OAuthTicketHandler
                 idUsuarioSesion,
                 context.HttpContext.RequestAborted);
 
+            var sesionService = context.HttpContext.RequestServices
+                .GetRequiredService<ISesionUsuarioService>();
+
+            var sesion = await sesionService.CrearSesionAsync(
+                usuario.IdUsuario,
+                provider,
+                context.HttpContext,
+                context.HttpContext.RequestAborted);
+
             var identity = new ClaimsIdentity("Voxify");
             identity.AddClaim(new Claim(
                 VoxifyClaims.IdUsuario,
                 usuario.IdUsuario.ToString()));
+            identity.AddClaim(new Claim(
+                VoxifyClaims.IdSesion,
+                sesion.IdSesion.ToString()));
             identity.AddClaim(new Claim(ClaimTypes.Name, usuario.Nombre));
             identity.AddClaim(new Claim(VoxifyClaims.Proveedor, provider));
 
